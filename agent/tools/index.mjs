@@ -1,17 +1,22 @@
 import { ToolNode } from "@langchain/langgraph/prebuilt";
-import { Tool } from "langchain";
+
+
+// Community tools
+import { DuckDuckGoSearch } from "@langchain/community/tools/duckduckgo_search";
+
+
 
 
 /**
  * List all the tools here
  */
-const tools = [
-    
-];
+export const tools = [
+            new DuckDuckGoSearch({ maxResults: 5 }),
+        ];
 
 
 
 
 
 
-export const toolNode = new ToolNode<Tool>(tools) // Use langGraph build-in ToolNode
+export const toolNode = new ToolNode(tools); // Use langGraph build-in ToolNode

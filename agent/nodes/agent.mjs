@@ -1,5 +1,6 @@
 import { AgentState } from "../state.mjs"
 import { chatOpenrouter } from "./Openrouter/Openrouter.mjs";
+import { tools } from "../tools/index.mjs"
 
 /**
  * This file contains the definitions
@@ -28,11 +29,11 @@ import { chatOpenrouter } from "./Openrouter/Openrouter.mjs";
 export async function callModel(state, config) {
     
     const messages = state.messages;
-    const modelID = config.modelID;
-    const apiKey = config.apiKey;
+    const modelID = config.configurable.model;
+    const apiKey = config.configurable.key;
 
     // Use openrouter as provider
-    const provider = chatOpenrouter(modelID, apiKey);
+    const provider = chatOpenrouter(modelID, apiKey).bindTools(tools);
 
     // Inference
     const response = await provider.invoke(messages);
