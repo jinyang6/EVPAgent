@@ -1,0 +1,8 @@
+{
+  "graphs": {
+    "agent": "./agent/graph.mjs"
+  },
+  "env": ".env",
+  "dependencies": ["."],
+  "node_version": "20"
+}
