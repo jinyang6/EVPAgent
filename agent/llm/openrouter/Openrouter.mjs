@@ -26,8 +26,8 @@ export const chatOpenrouter = (modelID, key) => {
         configuration: {
             baseURL: "https://openrouter.ai/api/v1",
             defaultHeaders: {
-                "HTTP-Referer": "https://jinyang6.github.io/chatanyllm-agentic",
-                "X-Title": "chatanyllm-agentic"
+                "HTTP-Referer": "https://github.com/jinyang6/EVPAgent",
+                "X-Title": "EVPAgent"
             }
         }
     })

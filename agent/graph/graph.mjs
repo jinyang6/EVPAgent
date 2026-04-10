@@ -1,7 +1,8 @@
+import 'dotenv/config';
 import { StateGraph } from "@langchain/langgraph";
 import { AgentState } from "./state.mjs";
-import { callModel } from "./nodes/agent.mjs";
-import { toolNode } from "./tools/index.mjs";
+import { callModel } from "../llm/agent.mjs";
+import { toolNode } from "../tools/index.mjs";
 import { START, END } from "@langchain/langgraph";
 
 

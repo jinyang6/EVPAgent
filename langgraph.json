@@ -1,8 +1,11 @@
 {
   "graphs": {
-    "agent": "./agent/graph.mjs"
+    "agent": "./agent/graph.mjs:workflow"
   },
   "env": ".env",
-  "dependencies": ["."],
+  "dependencies": [
+    ".",
+    "dotenv"
+  ],
   "node_version": "20"
 }
