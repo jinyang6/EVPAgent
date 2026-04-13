@@ -1,26 +1,47 @@
 import * as esbuild from 'esbuild';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { readFileSync } from 'fs';
+import { readFileSync, cpSync, mkdirSync, existsSync } from 'fs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const srcDir = join(__dirname);
+const distDir = join(srcDir, 'dist');
+const configDir = join(__dirname, '../agent/config');
+const distConfigDir = join(distDir, 'config');
 
-// Read system prompt at build time to embed it
-const systemPromptPath = join(__dirname, '../agent/config/system_prompt.md');
-const systemPromptContent = readFileSync(systemPromptPath, 'utf-8');
+// Ensure dist/config exists
+if (!existsSync(distConfigDir)) {
+  mkdirSync(distConfigDir, { recursive: true });
+}
+
+// Copy config files to dist/
+const configFiles = [
+  'system_prompt.md',
+  'Rephrase.md',
+  'Loop.md',
+];
+
+for (const file of configFiles) {
+  const src = join(configDir, file);
+  const dest = join(distConfigDir, file);
+  if (existsSync(src)) {
+    cpSync(src, dest);
+    console.log(`Copied: ${file}`);
+  }
+}
+
+console.log('Config files copied to dist/config/');
+console.log('Build complete: dist/cli.js');
 
 await esbuild.build({
-  entryPoints: [join(__dirname, 'cli.jsx')],
+  entryPoints: [join(srcDir, 'cli.jsx')],
   bundle: true,
-  outfile: join(__dirname, 'dist', 'cli.js'),
+  outfile: join(distDir, 'cli.js'),
   format: 'esm',
   platform: 'node',
   target: 'node20',
   loader: {
     '.jsx': 'jsx',
-  },
-  define: {
-    '__SYSTEM_PROMPT__': JSON.stringify(systemPromptContent),
   },
   external: [
     'ink', 
@@ -61,5 +82,3 @@ await esbuild.build({
   minify: false,
   sourcemap: true,
 });
-
-console.log('Build complete: dist/cli.js');

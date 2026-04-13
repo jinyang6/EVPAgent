@@ -1,14 +1,14 @@
 import { AgentState } from "../graph/state.mjs"
-import { chatOpenrouter } from "./openrouter/Openrouter.mjs";
+import { createModel } from "./api/OpenAICompatible.mjs";
 import { tools } from "../tools/index.mjs"
 
 /**
- * System prompt injected at build time via esbuild define
+ * Gets system prompt from config or uses fallback
  * @type {string}
  */
-const SYSTEM_PROMPT = typeof __SYSTEM_PROMPT__ !== 'undefined' 
-  ? __SYSTEM_PROMPT__ 
-  : "You are EVPAgent.";
+function getSystemPrompt(config) {
+  return config?.configurable?.systemPrompt || "You are EVPAgent.";
+}
 
 /**
  * This file contains the definitions
@@ -24,30 +24,32 @@ const SYSTEM_PROMPT = typeof __SYSTEM_PROMPT__ !== 'undefined'
  * the chat messages to the llm and 
  * returns the llm's response to the framework.
  * @param {typeof AgentState} state The state of the graph, containing data to store/process
- * @param {Object} config The configuration of the provider, for example 
- 
- { 
- 
-      modelID: "google/gemini-3-flash-preview",
-      apiKey: "sk-xxx..."
- 
- } 
+* @param {Object} config The configuration of the provider, for example
+  
+  {
+       baseURL: "https://openrouter.ai/api/v1",
+       apiKey: "sk-xxx...",
+       modelId: "google/gemini-3-flash-preview"
+  }
  * @returns The response of the llm, to be appended to chat history by framework using reducer
  */
 export async function callModel(state, config) {
     
     const messages = state.messages;
-    const modelID = config.configurable.model;
-    const apiKey = config.configurable.key;
+    const { baseURL, apiKey, modelId, systemPrompt } = config.configurable;
 
     // Inject system prompt as first message
     const fullMessages = [
-        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: getSystemPrompt(config) },
         ...messages
     ];
 
-    // Use openrouter as provider
-    const provider = chatOpenrouter(modelID, apiKey).bindTools(tools);
+    // Create chat model with OpenAI-compatible API config
+    const provider = createModel({
+        baseURL,
+        apiKey,
+        modelId
+    }).bindTools(tools);
 
     // Inference
     const response = await provider.invoke(fullMessages);

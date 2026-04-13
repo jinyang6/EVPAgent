@@ -125,10 +125,15 @@ export const searchWikipediaTool = tool(
   wikipediaSearch,
   {
     name: 'searchWikipedia',
-    description: `Search Wikipedia for articles.
+    description: `Search Wikipedia for articles using MediaWiki Action API.
 
 Parameters:
-- query (required): Search query
+- query (required): Search query - supports advanced operators:
+  - "exact phrase" for exact match
+  - AND / OR / NOT for boolean logic (e.g., "Mars AND ocean NOT atmosphere")
+  - intitle: for title-only search (e.g., intitle:"Curiosity rover")
+  - insource: for article text search (e.g., insource:"olivine" "water")
+  - incategory: for category search (e.g., incategory:"Space exploration")
 - limit (optional, default=5): Number of results (3=facts, 5=default, 10+=research)
 - type (optional): 'text', 'title', or 'nearmatch'
 - useCache (optional, default=true): Set to false to force web fetch

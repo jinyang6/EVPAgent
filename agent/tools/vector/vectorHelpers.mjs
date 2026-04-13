@@ -54,12 +54,11 @@ let embeddingsInstance = null;
  */
 export function getEmbeddings() {
   if (!embeddingsInstance) {
-    const embeddingModel = process.env.OPENROUTER_EMBEDDING_MODEL || "qwen/qwen3-embedding-8b";
     embeddingsInstance = new OpenAIEmbeddings({
-      model: embeddingModel,
-      apiKey: process.env.OPENROUTER_API_KEY,
+      model: process.env.EMBEDDING_MODEL_ID,
+      apiKey: process.env.EMBEDDING_MODEL_API_KEY,
       configuration: {
-        baseURL: "https://openrouter.ai/api/v1",
+        baseURL: process.env.EMBEDDING_MODEL_BASE_URL,
         defaultHeaders: {
           "HTTP-Referer": "https://github.com/jinyang6/EVPAgent",
           "X-Title": "EVPAgent",
