@@ -1,21 +1,25 @@
-
 # LangGraph related
 .langgraph_api
 
 langgraph.json
 
-package-lock.json
-
-package.json
-
-
-# .env
-.env
+# Build output
+src/dist/
 
 # node_modules/
 node_modules/
 
+# .env
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
 # EVPAgent
 EVPAgent.mjs
 test_fetchWikiPage.mjs
-
