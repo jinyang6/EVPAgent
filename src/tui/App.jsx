@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { render, Box, Text, useInput, Static } from 'ink';
-import { formatStatsReport, resetResponseStats } from '../../agent/tools/stats.mjs';
+import { formatStatsReport, resetResponseStats } from '../../system/agents/SearchAgent/tools/stats.mjs';
 
 /**
  * EVPAgent TUI - Simple with Loading
@@ -21,12 +21,13 @@ const LoadingSpinner = () => {
   return <Text dimColor>{frames[frame]}</Text>;
 };
 
-const App = ({ agent, config }) => {
+const App = ({ agent, config, processQuery }) => {
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [toolQuery, setToolQuery] = useState(null);
   const [toolEntries, setToolEntries] = useState([]);
+  const [stage, setStage] = useState('idle'); // idle, composing, researching
   const msgIdRef = useRef(0);
 
   useInput((char, key) => {
@@ -47,6 +48,7 @@ const App = ({ agent, config }) => {
     setIsLoading(true);
     setToolQuery(null);
     setToolEntries([]);
+    setStage('composing');
     
     setMessages(prev => {
       const newMsgs = [...prev, { id: msgIdRef.current++, role: 'user', content: userInput }];
@@ -54,63 +56,22 @@ const App = ({ agent, config }) => {
     });
     
     try {
-      const history = messages.map(m => ({ role: m.role, content: m.content }));
-      const initialState = {
-        messages: [...history, { role: 'user', content: userInput }]
-      };
-      
-      const stream = await agent.stream(initialState, config);
-      let finalResponse = '';
-      
-      for await (const chunk of stream) {
-        if (chunk.agent?.messages) {
-          const newestMsg = chunk.agent.messages[chunk.agent.messages.length - 1];
-          
-          if (newestMsg._getType() === 'ai' || newestMsg.type === 'ai') {
-            // Show tool query
-            if (newestMsg.tool_calls?.length > 0) {
-              const toolCall = newestMsg.tool_calls[0];
-              const args = toolCall.function?.arguments || '{}';
-              let parsedArgs;
-              try {
-                parsedArgs = JSON.parse(args);
-              } catch {
-                parsedArgs = { raw: args };
-              }
-              setToolQuery({ name: toolCall.name, args: parsedArgs });
+      // Use processQuery which orchestrates the multi-agent workflow
+      await processQuery(userInput, (output) => {
+        // This callback receives agent output during streaming
+        if (typeof output === 'string') {
+          setMessages(prev => {
+            const lastMsg = prev[prev.length - 1];
+            if (lastMsg && lastMsg.role === 'user') {
+              // Add new assistant message
+              return [...prev, { id: msgIdRef.current++, role: 'assistant', content: output }];
+            } else {
+              // Update existing assistant message
+              return [...prev.slice(0, -1), { ...lastMsg, content: output }];
             }
-            if (newestMsg.content) {
-              finalResponse = newestMsg.content;
-            }
-          }
+          });
         }
-        
-        // Show tool entries/result (first 5 lines)
-        if (chunk.tools?.messages) {
-          const toolMsg = chunk.tools.messages[0];
-          if (toolMsg.content) {
-            const lines = [];
-            let start = 0;
-            for (let i = 0; i < 5; i++) {
-              const nlIndex = toolMsg.content.indexOf('\n', start);
-              if (nlIndex === -1) {
-                lines.push(toolMsg.content.slice(start, start + 200));
-                break;
-              }
-              lines.push(toolMsg.content.slice(start, nlIndex));
-              start = nlIndex + 1;
-            }
-            setToolEntries(lines.map(l => ({ text: l })));
-          }
-        }
-      }
-      
-      if (finalResponse) {
-        setMessages(prev => {
-          const newMsgs = [...prev, { id: msgIdRef.current++, role: 'assistant', content: finalResponse }];
-          return newMsgs.slice(-MAX_MESSAGES);
-        });
-      }
+      });
       
       // Log cache statistics after response
       console.error(formatStatsReport());
@@ -123,8 +84,17 @@ const App = ({ agent, config }) => {
       });
     } finally {
       setIsLoading(false);
+      setStage('idle');
     }
-  }, [input, isLoading, messages, agent, config]);
+  }, [input, isLoading, processQuery]);
+
+  const getStageText = () => {
+    switch (stage) {
+      case 'composing': return 'composing prompt...';
+      case 'researching': return 'researching...';
+      default: return 'thinking...';
+    }
+  };
 
   return (
     <Box flexDirection="column" height={40}>
@@ -149,30 +119,15 @@ const App = ({ agent, config }) => {
             <Box flexDirection="row">
               <LoadingSpinner />
               <Text dimColor> </Text>
-              {toolQuery ? (
-                <Text yellow>{toolQuery.name}({Object.entries(toolQuery.args).map(([k,v]) => `${k}=${v}`).join(', ')})</Text>
-              ) : (
-                <Text dimColor>thinking...</Text>
-              )}
+              <Text yellow>{getStageText()}</Text>
             </Box>
-            {toolEntries.length > 0 && (
-              <Box flexDirection="column" marginTop={1}>
-                {toolEntries.slice(0, 5).map((entry, i) => (
-                  <Text key={i} dimColor>
-                    {entry.title ? `[${entry.title}]` : entry.text?.slice(0, 80) || ''}
-                  </Text>
-                ))}
-                {toolEntries.length > 5 && (
-                  <Text dimColor>... and {toolEntries.length - 5} more</Text>
-                )}
-              </Box>
-            )}
           </Box>
         )}
       </Box>
       
       <Box>
-        <Text cyan>➤ </Text>
+        <Text bold cyan>User</Text>
+        <Text cyan> ➤ </Text>
         <Text>{input}</Text>
         <Text dimColor>_</Text>
       </Box>

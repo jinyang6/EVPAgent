@@ -1,0 +1,49 @@
+{
+  "name": "evpagent",
+  "version": "1.0.0",
+  "description": "A LangGraph-based AI agent with TUI interface",
+  "main": "index.js",
+  "bin": {
+    "evp": "./src/dist/cli.js"
+  },
+  "scripts": {
+    "build": "node src/build.mjs",
+    "start": "npm run build && node src/dist/cli.js",
+    "dev": "npm run build && node src/dist/cli.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jinyang6/EVPAgent.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/jinyang6/EVPAgent/issues"
+  },
+  "homepage": "https://github.com/jinyang6/EVPAgent#readme",
+  "dependencies": {
+    "@lancedb/lancedb": "^0.27.2",
+    "@langchain/community": "^1.1.27",
+    "@langchain/core": "^1.1.39",
+    "@langchain/langgraph": "^1.2.0",
+    "@langchain/openai": "^1.4.3",
+    "apache-arrow": "^21.1.0",
+    "axios": "^1.13.6",
+    "cheerio": "^1.2.0",
+    "dotenv": "^17.3.1",
+    "duck-duck-scrape": "^2.2.7",
+    "ink": "^6.8.0",
+    "langchain": "^1.2.28",
+    "react": "^19.2.4",
+    "turndown": "^7.2.2",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@langchain/langgraph-cli": "^1.1.14",
+    "esbuild": "^0.28.0",
+    "typescript": "^6.0.2"
+  }
+}

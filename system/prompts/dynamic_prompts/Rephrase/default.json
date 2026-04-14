@@ -1,0 +1,5 @@
+{
+  "name": "default",
+  "description": "Standard academic rephrasing for precise, researchable questions",
+  "content": "When given a user question, first rephrase it to be **precise and academic**:\n\n**Before:** \"Was there tide on mars?\"\n**After:** \"Did Mars possess liquid water bodies that exhibited tidal patterns?\"\n\nMake the question one that a **subject matter professor** would ask - specific, evidence-based, and researchable."
+}
