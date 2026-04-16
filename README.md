@@ -6,20 +6,30 @@ A LangGraph-based AI agent with web search and fetch capabilities and Ink TUI.
 
 ```
 src/
-├── cli.js                 # CLI entry point
+├── cli.jsx                # CLI entry point
 └── tui/
     └── App.jsx            # Ink TUI component
 
-agent/
-├── nodes/
-│   ├── agent.mjs          # Main agent node (LLM + tools)
-│   └── Openrouter/       # OpenRouter API adapter
-├── tools/
-│   ├── index.mjs          # Tool registry
-│   ├── webSearchTool.mjs  # Bocha web search
-│   └── webFetchTool.mjs   # Web page fetcher + markdown converter
-├── state.mjs              # LangGraph state definition
-└── graph.mjs              # Workflow graph definition
+system/agents/
+├── SysAgent/              # Main pipeline orchestrator
+│   ├── index.mjs          # SysAgent class (stream/invoke)
+│   ├── utils/
+│   │   ├── paths.mjs      # getPromptsDir(), getConfigDir()
+│   │   └── files.mjs      # readJson(), readFile()
+│   └── types/
+│       └── chunk.mjs      # OpenAI-compatible chunk types
+├── PromptComposerAgent/   # Creates dynamic_system_prompt.md
+├── SearchAgent/           # Web search pipeline
+│   └── tools/
+│       ├── web/           # webSearchTool, webFetchTool
+│       ├── wikipedia/     # searchWikipedia, fetchWikiPage
+│       └── vector/       # Vector storage helpers
+└── PromptRefineAgent/     # Updates prompts based on session
+
+Pipeline Flow:
+  compose (PromptComposerAgent)
+    → search (SearchAgent)
+    → refine (PromptRefineAgent)
 ```
 
 ## Installation
@@ -39,6 +49,23 @@ Or link for global access:
 ```bash
 npm link
 evp
+```
+
+## SysAgent API
+
+```javascript
+import { createSysAgent } from './system/agents/SysAgent/index.mjs';
+
+const agent = createSysAgent({ baseURL, apiKey, modelId });
+
+// Streaming (yields OpenAI-compatible chunks)
+for await (const chunk of agent.stream("query")) {
+  // { choices: [{ delta: { content: "..." } }] }
+  // { choices: [{ delta: { tool_calls: [{ name: "webSearchTool", args: {} }] }] }
+}
+
+// Invoke (returns array of all chunks)
+const chunks = await agent.invoke("query");
 ```
 
 ## Dependencies
