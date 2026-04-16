@@ -122,10 +122,4 @@ weathers rapidly to [clay minerals](https://en.wikipedia.org/wiki/Noachian#Weath
 - prefer well-referenced articles
 - If a question cannot be answered from Wikipedia, say so clearly
 - Break complex questions into smaller, verifiable claims
-
-## End of Search
-
-When your research is complete, you MUST call the `report` tool with:
-- `searchSuccess`: true if you found relevant information, false if not
-
-This is required before providing your final answer.
+- You MUST call the `report` tool with `searchSuccess`: true if you found relevant information and success report, false if otherwise. This is required before providing your final answer.

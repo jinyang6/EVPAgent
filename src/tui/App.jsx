@@ -25,9 +25,6 @@ const App = ({ agent, config, processQuery }) => {
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [toolQuery, setToolQuery] = useState(null);
-  const [toolEntries, setToolEntries] = useState([]);
-  const [stage, setStage] = useState('idle'); // idle, composing, researching
   const msgIdRef = useRef(0);
 
   useInput((char, key) => {
@@ -42,41 +39,23 @@ const App = ({ agent, config, processQuery }) => {
 
   const handleSubmit = useCallback(async () => {
     if (!input.trim() || isLoading) return;
-    
+
     const userInput = input.trim();
     setInput('');
     setIsLoading(true);
-    setToolQuery(null);
-    setToolEntries([]);
-    setStage('composing');
-    
+
     setMessages(prev => {
       const newMsgs = [...prev, { id: msgIdRef.current++, role: 'user', content: userInput }];
       return newMsgs.slice(-MAX_MESSAGES);
     });
-    
+
     try {
-      // Use processQuery which orchestrates the multi-agent workflow
-      await processQuery(userInput, (output) => {
-        // This callback receives agent output during streaming
-        if (typeof output === 'string') {
-          setMessages(prev => {
-            const lastMsg = prev[prev.length - 1];
-            if (lastMsg && lastMsg.role === 'user') {
-              // Add new assistant message
-              return [...prev, { id: msgIdRef.current++, role: 'assistant', content: output }];
-            } else {
-              // Update existing assistant message
-              return [...prev.slice(0, -1), { ...lastMsg, content: output }];
-            }
-          });
-        }
-      });
+      await processQuery(userInput);
       
       // Log cache statistics after response
       console.error(formatStatsReport());
       resetResponseStats();
-      
+
     } catch (err) {
       setMessages(prev => {
         const newMsgs = [...prev, { id: msgIdRef.current++, role: 'error', content: err.message }];
@@ -84,17 +63,8 @@ const App = ({ agent, config, processQuery }) => {
       });
     } finally {
       setIsLoading(false);
-      setStage('idle');
     }
   }, [input, isLoading, processQuery]);
-
-  const getStageText = () => {
-    switch (stage) {
-      case 'composing': return 'composing prompt...';
-      case 'researching': return 'researching...';
-      default: return 'thinking...';
-    }
-  };
 
   return (
     <Box flexDirection="column" height={40}>
@@ -105,7 +75,7 @@ const App = ({ agent, config, processQuery }) => {
       <Box flexDirection="column" overflowY={true} height={35}>
         <Static items={messages}>
           {(msg) => (
-            <Box flexDirection="column" marginBottom={1}>
+            <Box key={msg.id} flexDirection="column" marginBottom={1}>
               <Text bold color={msg.role === 'user' ? 'cyan' : 'green'}>
                 {msg.role === 'user' ? 'User' : 'Agent'}
               </Text>
@@ -115,12 +85,9 @@ const App = ({ agent, config, processQuery }) => {
         </Static>
         
         {isLoading && (
-          <Box flexDirection="column">
-            <Box flexDirection="row">
-              <LoadingSpinner />
-              <Text dimColor> </Text>
-              <Text yellow>{getStageText()}</Text>
-            </Box>
+          <Box flexDirection="row">
+            <LoadingSpinner />
+            <Text dimColor> working...</Text>
           </Box>
         )}
       </Box>

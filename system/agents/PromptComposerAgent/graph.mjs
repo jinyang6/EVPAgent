@@ -6,11 +6,7 @@ import { START, END } from "@langchain/langgraph";
 
 /**
  * Defines the PromptComposerAgent langGraph workflow.
- * Flow: START -> agent -> tools -> agent -> ... -> END
- * 
- * Ends when:
- * 1. Agent returns a message without tool_calls (natural end)
- * 2. OR after combinePrompts is called and returns
+ * Flow: START -> agent -> (tools -> agent)* -> END
  */
 export const composerGraph = new StateGraph(ComposerState)
                             .addNode("agent", callModel)

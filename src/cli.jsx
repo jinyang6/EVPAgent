@@ -12,9 +12,8 @@ import 'dotenv/config';
 import React from 'react';
 import { render } from 'ink';
 import App from './tui/App.jsx';
-import { composerGraph } from '../system/agents/PromptComposerAgent/graph.mjs';
-import { searchGraph } from '../system/agents/SearchAgent/graph.mjs';
-import { refineGraph } from '../system/agents/PromptRefineAgent/graph.mjs';
+import { createSysAgent } from '../system/agents/SysAgent/index.mjs';
+import { formatStatsReport, resetResponseStats } from '../system/agents/SearchAgent/tools/stats.mjs';
 import { readFileSync, existsSync, cpSync, mkdirSync, readdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -191,35 +190,21 @@ if (version) {
   console.log(`EVPAgent v${version}\n`);
 }
 
-// Agent configuration - used by SysAgent internally
-const baseConfig = {
-  configurable: {
-    baseURL: process.env.SEARCH_MODEL_BASE_URL,
-    apiKey: process.env.SEARCH_MODEL_API_KEY,
-    modelId: process.env.SEARCH_MODEL_ID,
-  },
-  recursionLimit: 100,
+// Agent configuration
+const agentConfig = {
+  baseURL: process.env.SEARCH_MODEL_BASE_URL,
+  apiKey: process.env.SEARCH_MODEL_API_KEY,
+  modelId: process.env.SEARCH_MODEL_ID,
 };
 
-/**
- * Read dynamic system prompt if it exists
- */
-function readDynamicSystemPrompt() {
-  const dynamicPath = join(userPromptsDir, 'dynamic_system_prompt.md');
-  if (existsSync(dynamicPath)) {
-    const content = readFileSync(dynamicPath, 'utf-8');
-    if (content.trim().length > 0) {
-      return content;
-    }
-  }
-  return null;
-}
+// Create SysAgent instance
+const sysAgent = createSysAgent(agentConfig);
 
 /**
  * Print first 5 lines of content
  */
 function printLines(content, prefix = "") {
-  if (!content) return;
+  if (!content || typeof content !== 'string') return;
   const lines = content.split('\n').slice(0, 5);
   for (const line of lines) {
     console.log(`${prefix}${line}`);
@@ -227,143 +212,42 @@ function printLines(content, prefix = "") {
 }
 
 /**
- * Main orchestration function - orchestrates all agents
+ * Main orchestration function - uses SysAgent pipeline
  * @param {string} userQuery - The user's search query
- * @param {function} onOutput - Callback function to receive streaming output (content: string) => void
  */
-async function processQuery(userQuery, onOutput) {
-  console.log(`\n[SysAgent] Starting orchestration for query: "${userQuery}"\n`);
-  
-  // Step 1: Run PromptComposerAgent to create dynamic_system_prompt.md
-  console.log("[ComposerAgent] Starting...");
-  const composerState = { messages: [{ role: "user", content: userQuery }] };
-  for await (const chunk of await composerGraph.stream(composerState, baseConfig)) {
-    if (chunk.agent) {
-      const msg = chunk.agent.messages?.[0];
-      if (msg?.tool_calls) {
-        for (const tc of msg.tool_calls) {
-          console.log(`  [ComposerAgent] Tool: ${tc.name}`, tc.arguments ? `(${JSON.stringify(tc.arguments)})` : '');
-        }
+async function processQuery(userQuery) {
+  try {
+    // Stream from SysAgent
+    for await (const chunk of sysAgent.stream(userQuery)) {
+      // chunk is OpenAI-compatible: { choices: [{ delta: { content: "..." } }] }
+      if (chunk?.choices?.[0]?.delta?.content) {
+        process.stdout.write(chunk.choices[0].delta.content);
       }
-      if (msg?.content) {
-        printLines(msg.content, "    ");
+      if (chunk?.choices?.[0]?.delta?.tool_calls) {
+        const tc = chunk.choices[0].delta.tool_calls[0];
+        console.log(`\n  → ${tc.name}\n`);
       }
     }
-    if (chunk.tools) {
-      const toolMsg = chunk.tools.messages?.[0];
-      if (toolMsg?.content) {
-        console.log(`  [ComposerAgent] Result:`);
-        printLines(toolMsg.content, "    ");
-      }
-    }
-  }
-  console.log("[ComposerAgent] Done\n");
-  
-  // Step 2: Run SearchAgent with the dynamic prompt
-  console.log("[SearchAgent] Starting...");
-  const dynamicPrompt = readDynamicSystemPrompt();
-  let systemPrompt;
-  if (dynamicPrompt) {
-    systemPrompt = dynamicPrompt;
-    console.log("[SearchAgent] Using dynamic system prompt");
-  } else {
-    systemPrompt = buildSystemPrompt(userConfigDir);
-    console.log("[SearchAgent] Using default system prompt");
-  }
-  
-  const searchConfig = {
-    ...baseConfig,
-    configurable: {
-      ...baseConfig.configurable,
-      systemPrompt,
-    }
-  };
-  
-  const searchState = { messages: [{ role: "user", content: userQuery }] };
-  for await (const chunk of await searchGraph.stream(searchState, searchConfig)) {
-    if (chunk.agent) {
-      const msg = chunk.agent.messages?.[0];
-      if (msg?.tool_calls) {
-        for (const tc of msg.tool_calls) {
-          console.log(`  [SearchAgent] Tool: ${tc.name}`, tc.arguments ? `(${JSON.stringify(tc.arguments)})` : '');
-        }
-      }
-      const content = msg?.content;
-      if (content) {
-        onOutput(content);
-      }
-    }
-    if (chunk.tools) {
-      const toolMsg = chunk.tools.messages?.[0];
-      if (toolMsg?.content) {
-        console.log(`  [SearchAgent] Result:`);
-        printLines(toolMsg.content, "    ");
-      }
-    }
-  }
-  console.log("[SearchAgent] Done\n");
-  
-  // Check search success before calling RefineAgent
-  const manifestPath = join(userPromptsDir, 'session_manifest.json');
-  let searchSuccess = false;
-  if (existsSync(manifestPath)) {
-    try {
-      const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'));
-      searchSuccess = manifest.searchSuccess || false;
-      console.log(`[SysAgent] Search success: ${searchSuccess}`);
-    } catch (e) {
-      console.error("[SysAgent] Failed to read manifest:", e.message);
-    }
-  }
-  
-  // Step 3: Run PromptRefineAgent only if search was successful
-  if (searchSuccess) {
-    console.log("[RefineAgent] Starting (background)...");
-    setImmediate(async () => {
-    try {
-      const refineState = { messages: [] };
-      for await (const chunk of await refineGraph.stream(refineState, baseConfig)) {
-        if (chunk.agent) {
-          const msg = chunk.agent.messages?.[0];
-          if (msg?.tool_calls) {
-            for (const tc of msg.tool_calls) {
-              console.log(`  [RefineAgent] Tool: ${tc.name}`, tc.arguments ? `(${JSON.stringify(tc.arguments)})` : '');
-            }
-          }
-          if (msg?.content) {
-            printLines(msg.content, "    ");
-          }
-        }
-        if (chunk.tools) {
-          const toolMsg = chunk.tools.messages?.[0];
-          if (toolMsg?.content) {
-            console.log(`  [RefineAgent] Result:`);
-            printLines(toolMsg.content, "    ");
-          }
-        }
-      }
-      console.log("[RefineAgent] Done\n");
-      } catch (error) {
-        console.error("[RefineAgent] Background task failed:", error.message);
-      }
-    });
-  } else {
-    console.log("[RefineAgent] Skipped (search was not successful)\n");
+    console.log('\n[SysAgent] Pipeline complete\n');
+  } catch (error) {
+    console.error("\n[SysAgent] Pipeline error:", error.message);
+  } finally {
+    // Print cache stats
+    console.error(formatStatsReport());
+    resetResponseStats();
   }
 }
 
 // Export for use by TUI
-export { processQuery, baseConfig };
+export { processQuery, agentConfig };
 
 // For direct execution, run a simple test
 if (process.argv[1] && (process.argv[1].endsWith('cli.jsx') || process.argv[1].endsWith('cli.js'))) {
   // This is the bundled entry point - TUI handles everything
-  render(React.createElement(App, { 
-    agent: null, 
-    config: baseConfig,
+  render(React.createElement(App, {
+    agent: null,
+    config: agentConfig,
     processQuery,
-    buildSystemPrompt: () => buildSystemPrompt(userConfigDir),
-    readDynamicSystemPrompt
   }), {
     exitOnCtrlC: true,
   });

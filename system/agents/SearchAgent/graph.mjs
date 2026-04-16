@@ -7,8 +7,8 @@ import { START, END } from "@langchain/langgraph";
 
 
 /**
- * Defines the langGraph workflow.
- * Flow: START -> agent -> tools -> agent -> ... -> END
+ * Defines the SearchAgent langGraph workflow.
+ * Flow: START -> agent -> (tools -> agent)* -> END
  */
 export const searchGraph = new StateGraph(AgentState)
                             .addNode("agent", callModel)
