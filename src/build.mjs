@@ -73,18 +73,13 @@ console.log('Config and prompt files copied');
 console.log('Build complete: dist/cli.js');
 
 await esbuild.build({
-  entryPoints: [join(srcDir, 'cli.jsx')],
+  entryPoints: [join(srcDir, 'cli.js')],
   bundle: true,
   outfile: join(distDir, 'cli.js'),
   format: 'esm',
   platform: 'node',
   target: 'node20',
-  loader: {
-    '.jsx': 'jsx',
-  },
   external: [
-    'ink', 
-    'react',
     'axios',
     'form-data',
     'combined-stream',
@@ -117,6 +112,7 @@ await esbuild.build({
     'node:fs',
     'node:os',
     'node:crypto',
+    'node:readline',
   ],
   minify: false,
   sourcemap: true,

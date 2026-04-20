@@ -111,95 +111,9 @@ var init_chunker = __esm({
   }
 });
 
-// src/cli.jsx
+// src/cli.js
 import "dotenv/config";
-import React2 from "react";
-import { render as render2 } from "ink";
-
-// src/tui/App.jsx
-import React, { useState, useCallback, useRef, useEffect } from "react";
-import { render, Box, Text, useInput, Static } from "ink";
-
-// system/agents/SearchAgent/tools/stats.mjs
-var stats = {
-  vectorHits: 0,
-  webRequests: 0,
-  responseCount: 0
-};
-function recordVectorHit(type = "unknown") {
-  stats.vectorHits++;
-}
-function recordWebRequest(type = "unknown") {
-  stats.webRequests++;
-}
-function recordQuery(query) {
-}
-function recordArticle(article) {
-}
-function formatStatsReport() {
-  const total = stats.vectorHits + stats.webRequests;
-  if (total === 0) return "";
-  const hitRate = Math.round(stats.vectorHits / total * 100);
-  return `[Cache hit rate: ${hitRate}% (${stats.vectorHits}/${total} requests)]`;
-}
-function resetResponseStats() {
-  stats.responseCount++;
-  stats.vectorHits = 0;
-  stats.webRequests = 0;
-}
-
-// src/tui/App.jsx
-var MAX_MESSAGES = 20;
-var LoadingSpinner = () => {
-  const [frame, setFrame] = useState(0);
-  const frames = ["\u280B", "\u2819", "\u2839", "\u2838", "\u283C", "\u2834", "\u2826", "\u2827", "\u2807", "\u280F"];
-  React.useEffect(() => {
-    const id = setInterval(() => {
-      setFrame((f) => (f + 1) % frames.length);
-    }, 80);
-    return () => clearInterval(id);
-  }, []);
-  return /* @__PURE__ */ React.createElement(Text, { dimColor: true }, frames[frame]);
-};
-var App = ({ agent, config, processQuery: processQuery2 }) => {
-  const [input, setInput] = useState("");
-  const [messages, setMessages] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const msgIdRef = useRef(0);
-  useInput((char, key) => {
-    if (key.return) {
-      handleSubmit();
-    } else if (key.backspace || key.delete) {
-      setInput((prev) => prev.slice(0, -1));
-    } else if (char) {
-      setInput((prev) => prev + char);
-    }
-  });
-  const handleSubmit = useCallback(async () => {
-    if (!input.trim() || isLoading) return;
-    const userInput = input.trim();
-    setInput("");
-    setIsLoading(true);
-    setMessages((prev) => {
-      const newMsgs = [...prev, { id: msgIdRef.current++, role: "user", content: userInput }];
-      return newMsgs.slice(-MAX_MESSAGES);
-    });
-    try {
-      await processQuery2(userInput);
-      console.error(formatStatsReport());
-      resetResponseStats();
-    } catch (err) {
-      setMessages((prev) => {
-        const newMsgs = [...prev, { id: msgIdRef.current++, role: "error", content: err.message }];
-        return newMsgs.slice(-MAX_MESSAGES);
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  }, [input, isLoading, processQuery2]);
-  return /* @__PURE__ */ React.createElement(Box, { flexDirection: "column", height: 40 }, /* @__PURE__ */ React.createElement(Box, { marginBottom: 1 }, /* @__PURE__ */ React.createElement(Text, { bold: true, magenta: true }, "EVPAgent")), /* @__PURE__ */ React.createElement(Box, { flexDirection: "column", overflowY: true, height: 35 }, /* @__PURE__ */ React.createElement(Static, { items: messages }, (msg) => /* @__PURE__ */ React.createElement(Box, { key: msg.id, flexDirection: "column", marginBottom: 1 }, /* @__PURE__ */ React.createElement(Text, { bold: true, color: msg.role === "user" ? "cyan" : "green" }, msg.role === "user" ? "User" : "Agent"), /* @__PURE__ */ React.createElement(Text, null, msg.content))), isLoading && /* @__PURE__ */ React.createElement(Box, { flexDirection: "row" }, /* @__PURE__ */ React.createElement(LoadingSpinner, null), /* @__PURE__ */ React.createElement(Text, { dimColor: true }, " working..."))), /* @__PURE__ */ React.createElement(Box, null, /* @__PURE__ */ React.createElement(Text, { bold: true, cyan: true }, "User"), /* @__PURE__ */ React.createElement(Text, { cyan: true }, " \u27A4 "), /* @__PURE__ */ React.createElement(Text, null, input), /* @__PURE__ */ React.createElement(Text, { dimColor: true }, "_")));
-};
-var App_default = App;
+import readline from "readline";
 
 // system/agents/PromptComposerAgent/graph.mjs
 import { StateGraph } from "@langchain/langgraph";
@@ -686,6 +600,34 @@ function formatCachedSearchResults(cachedResults) {
     }
   }
   return output;
+}
+
+// system/agents/SearchAgent/tools/stats.mjs
+var stats = {
+  vectorHits: 0,
+  webRequests: 0,
+  responseCount: 0
+};
+function recordVectorHit(type = "unknown") {
+  stats.vectorHits++;
+}
+function recordWebRequest(type = "unknown") {
+  stats.webRequests++;
+}
+function recordQuery(query) {
+}
+function recordArticle(article) {
+}
+function formatStatsReport() {
+  const total = stats.vectorHits + stats.webRequests;
+  if (total === 0) return "";
+  const hitRate = Math.round(stats.vectorHits / total * 100);
+  return `[Cache hit rate: ${hitRate}% (${stats.vectorHits}/${total} requests)]`;
+}
+function resetResponseStats() {
+  stats.responseCount++;
+  stats.vectorHits = 0;
+  stats.webRequests = 0;
 }
 
 // system/agents/SearchAgent/tools/wikipedia/searchWikipedia.mjs
@@ -1701,10 +1643,10 @@ function createSysAgent(config) {
   return new SysAgent(config);
 }
 
-// src/cli.jsx
-import { readFileSync as readFileSync14, existsSync as existsSync14, cpSync, mkdirSync, readdirSync as readdirSync3 } from "fs";
+// src/cli.js
+import { existsSync as existsSync14, cpSync, mkdirSync, readdirSync as readdirSync3, readFileSync as readFileSync14 } from "fs";
+import { join as join14, dirname } from "path";
 import { fileURLToPath } from "url";
-import { dirname, join as join14 } from "path";
 import { homedir as homedir2 } from "os";
 function getConfigDir5() {
   const homeDir = homedir2();
@@ -1727,122 +1669,116 @@ function getPromptsDir12() {
   }
 }
 function getScriptDir() {
-  if (typeof __dirname !== "undefined") {
-    return __dirname;
-  }
-  const scriptPath = fileURLToPath(import.meta.url);
-  return dirname(scriptPath);
-}
-function getVersion() {
-  try {
-    const scriptDir = getScriptDir();
-    const versionPath = join14(scriptDir, "version.json");
-    if (existsSync14(versionPath)) {
-      const data = JSON.parse(readFileSync14(versionPath, "utf-8"));
-      return data.version;
-    }
-  } catch (e) {
-  }
-  return null;
+  if (typeof __dirname !== "undefined") return __dirname;
+  return dirname(fileURLToPath(import.meta.url));
 }
 function ensureConfigFiles() {
-  const userConfigDir2 = getConfigDir5();
+  const userConfigDir = getConfigDir5();
   const scriptDir = getScriptDir();
   const distConfigDir = join14(scriptDir, "prompts", "config");
-  if (!existsSync14(userConfigDir2)) {
-    mkdirSync(userConfigDir2, { recursive: true });
+  if (!existsSync14(userConfigDir)) {
+    mkdirSync(userConfigDir, { recursive: true });
   }
-  const configFiles = [
-    "system_prompt.md",
-    "Rephrase.md",
-    "Loop.md"
-  ];
-  for (const file of configFiles) {
+  for (const file of ["system_prompt.md", "Rephrase.md", "Loop.md"]) {
     const src = join14(distConfigDir, file);
-    const dest = join14(userConfigDir2, file);
-    if (existsSync14(src)) {
-      cpSync(src, dest, { force: true });
-    }
+    const dest = join14(userConfigDir, file);
+    if (existsSync14(src)) cpSync(src, dest, { force: true });
   }
-  return userConfigDir2;
+  return userConfigDir;
 }
 function ensurePromptFiles() {
-  const userPromptsDir2 = getPromptsDir12();
+  const userPromptsDir = getPromptsDir12();
   const scriptDir = getScriptDir();
   const distPromptsDir = join14(scriptDir, "prompts", "dynamic_prompts");
-  const userLoopDir = join14(userPromptsDir2, "Loop");
-  const userRephraseDir = join14(userPromptsDir2, "Rephrase");
-  if (!existsSync14(userLoopDir)) {
-    mkdirSync(userLoopDir, { recursive: true });
-  }
-  if (!existsSync14(userRephraseDir)) {
-    mkdirSync(userRephraseDir, { recursive: true });
-  }
-  const distLoopDir = join14(distPromptsDir, "Loop");
-  if (existsSync14(distLoopDir)) {
-    const files = readdirSync3(distLoopDir);
-    for (const file of files) {
-      const src = join14(distLoopDir, file);
-      const dest = join14(userLoopDir, file);
-      cpSync(src, dest, { force: true });
+  for (const subdir of ["Loop", "Rephrase"]) {
+    const userDir = join14(userPromptsDir, subdir);
+    const distDir = join14(distPromptsDir, subdir);
+    if (!existsSync14(userDir)) mkdirSync(userDir, { recursive: true });
+    if (existsSync14(distDir)) {
+      for (const file of readdirSync3(distDir)) {
+        cpSync(join14(distDir, file), join14(userDir, file), { force: true });
+      }
     }
   }
-  const distRephraseDir = join14(distPromptsDir, "Rephrase");
-  if (existsSync14(distRephraseDir)) {
-    const files = readdirSync3(distRephraseDir);
-    for (const file of files) {
-      const src = join14(distRephraseDir, file);
-      const dest = join14(userRephraseDir, file);
-      cpSync(src, dest, { force: true });
-    }
-  }
-  return userPromptsDir2;
+  return userPromptsDir;
 }
-var userConfigDir = ensureConfigFiles();
-var userPromptsDir = ensurePromptFiles();
-var version = getVersion();
-if (version) {
-  console.log(`EVPAgent v${version}
-`);
-}
+ensureConfigFiles();
+ensurePromptFiles();
 var agentConfig = {
   baseURL: process.env.SEARCH_MODEL_BASE_URL,
   apiKey: process.env.SEARCH_MODEL_API_KEY,
   modelId: process.env.SEARCH_MODEL_ID
 };
 var sysAgent = createSysAgent(agentConfig);
-async function processQuery(userQuery) {
+var rl = readline.createInterface({
+  input: process.stdin,
+  output: process.stdout
+});
+var frames = ["\u280B", "\u2819", "\u2839", "\u2838", "\u283C", "\u2834", "\u2826", "\u2827", "\u2807", "\u280F"];
+var spinIndex = 0;
+var spinInterval = null;
+function startSpinner() {
+  spinInterval = setInterval(() => {
+    spinIndex++;
+    process.stdout.write(`\r${frames[spinIndex % frames.length]} thinking...`);
+  }, 80);
+}
+function stopSpinner() {
+  if (spinInterval) {
+    clearInterval(spinInterval);
+    spinInterval = null;
+    process.stdout.write("\r" + " ".repeat(30) + "\r");
+  }
+}
+async function askQuestion(query) {
+  return new Promise((resolve) => {
+    rl.question(`User: ${query}
+Agent: `, (answer) => {
+      resolve(answer);
+    });
+  });
+}
+async function runQuery(query) {
+  startSpinner();
+  let output = "";
   try {
-    for await (const chunk of sysAgent.stream(userQuery)) {
+    for await (const chunk of sysAgent.stream(query)) {
       if (chunk?.choices?.[0]?.delta?.content) {
-        process.stdout.write(chunk.choices[0].delta.content);
+        output += chunk.choices[0].delta.content;
       }
       if (chunk?.choices?.[0]?.delta?.tool_calls) {
         const tc = chunk.choices[0].delta.tool_calls[0];
-        console.log(`
+        output += `
   \u2192 ${tc.name}
-`);
+`;
       }
     }
-    console.log("\n[SysAgent] Pipeline complete\n");
+    stopSpinner();
+    console.log(output || "(no output)");
   } catch (error) {
-    console.error("\n[SysAgent] Pipeline error:", error.message);
-  } finally {
-    console.error(formatStatsReport());
-    resetResponseStats();
+    stopSpinner();
+    console.error(`Error: ${error.message}`);
   }
+  console.error(formatStatsReport());
+  resetResponseStats();
 }
-if (process.argv[1] && (process.argv[1].endsWith("cli.jsx") || process.argv[1].endsWith("cli.js"))) {
-  render2(React2.createElement(App_default, {
-    agent: null,
-    config: agentConfig,
-    processQuery
-  }), {
-    exitOnCtrlC: true
-  });
+console.log("\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550");
+console.log("          EVPAgent - Ask questions no one ever asked");
+console.log("\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n");
+async function main() {
+  const initialQuery = await askQuestion("");
+  if (initialQuery.trim()) {
+    await runQuery(initialQuery);
+  }
+  while (true) {
+    const query = await askQuestion("");
+    if (!query.trim() || query.toLowerCase() === "exit") {
+      console.log("Goodbye!");
+      break;
+    }
+    await runQuery(query);
+  }
+  rl.close();
 }
-export {
-  agentConfig,
-  processQuery
-};
+main();
 //# sourceMappingURL=cli.js.map
