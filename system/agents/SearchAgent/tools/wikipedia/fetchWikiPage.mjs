@@ -62,7 +62,7 @@ function reportFetchResult(page, section, content) {
  */
 const wikiPageSchema = z.object({
   page: z.string().describe('Wikipedia page title (e.g., "Mars")'),
-  section: z.string().optional().describe('Section title to fetch (e.g., "Formation", omit for overview)'),
+  section: z.string().optional().describe('Section anchor to fetch (e.g., "Formation", omit for overview)'),
   limit: z.number().optional().default(3).describe('Number of results from vector cache (top-k)'),
   // useCache: z.boolean().optional().default(true).describe('Whether to use vector cache for retrieval'),
 });

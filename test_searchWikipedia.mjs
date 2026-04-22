@@ -5,7 +5,7 @@ async function test() {
 
   // Test 1: Basic search
   console.log('=== Test 1: Basic Search ===\n');
-  const result1 = await searchWikipediaTool.invoke({ query: 'Python programming language', limit: 3 });
+  const result1 = await searchWikipediaTool.invoke({ query: 'Why is there anything', limit: 3 });
   console.log(result1);
 
   // Test 2: Title-only search

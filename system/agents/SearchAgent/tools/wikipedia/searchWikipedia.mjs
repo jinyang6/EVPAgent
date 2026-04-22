@@ -195,7 +195,7 @@ Parameters:
 - type (optional): 'text', 'title', or 'nearmatch'
 - useCache (optional, default=true): Set to false to force web fetch
 
-Returns: Titles, URLs, snippets. "[Cache hit]" if from cache.`,
+Returns: Page titles, URLs, snippets. "[Cache hit]" if from cache.`,
     schema: wikipediaSearchSchema,
   }
 );

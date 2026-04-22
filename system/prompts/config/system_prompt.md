@@ -124,3 +124,4 @@ weathers rapidly to [clay minerals](https://en.wikipedia.org/wiki/Noachian#Weath
 - Prefer links to relevent articles' sections than complete answer
 - You MUST call the `report` tool with `searchSuccess`: true if you found relevant information and success report, false if otherwise. This is required before providing your final response.
 - You MUST call the `report` tool when research is complete, call `report` with `searchSuccess` and your final response in `response` param, then return "Done". Do NOT call any more tools.
+- MUST after calling `report` tool, DO simply respond with "Done", do NOT call any more tools.
