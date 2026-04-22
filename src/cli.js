@@ -2,112 +2,23 @@
 
 /**
  * EVPAgent CLI - Simple Node.js readline interface
+ *
+ * Commands:
+ *   /reset db      - Clear vector DB cache
+ *   /reset prompts  - Reset prompts to default
+ *   /reset all     - Reset both
+ *   /exit          - Exit CLI
  */
 
 import 'dotenv/config';
 import readline from 'readline';
-import { createSysAgent } from '../system/agents/SysAgent/index.mjs';
-import { formatStatsReport, resetResponseStats } from '../system/agents/SearchAgent/tools/stats.mjs';
-import { existsSync, cpSync, mkdirSync, readdirSync, readFileSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
-import { homedir } from 'os';
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Path Helpers
-// ═══════════════════════════════════════════════════════════════════════════════
-
-function getConfigDir() {
-  const homeDir = homedir();
-  if (process.platform === 'win32') {
-    return process.env.APPDATA
-      ? join(process.env.APPDATA, "EVPAgent", "prompts", "config")
-      : join(homeDir, ".evpagent", "prompts", "config");
-  } else if (process.platform === 'darwin') {
-    return join(homeDir, "Library", "Application Support", "EVPAgent", "prompts", "config");
-  } else {
-    return process.env.XDG_CONFIG_HOME
-      ? join(process.env.XDG_CONFIG_HOME, "evpagent", "prompts", "config")
-      : join(homeDir, ".config", "evpagent", "prompts", "config");
-  }
-}
-
-function getPromptsDir() {
-  const homeDir = homedir();
-  if (process.platform === 'win32') {
-    return process.env.APPDATA
-      ? join(process.env.APPDATA, "EVPAgent", "prompts", "dynamic_prompts")
-      : join(homeDir, ".evpagent", "prompts", "dynamic_prompts");
-  } else if (process.platform === 'darwin') {
-    return join(homeDir, "Library", "Application Support", "EVPAgent", "prompts", "dynamic_prompts");
-  } else {
-    return process.env.XDG_CONFIG_HOME
-      ? join(process.env.XDG_CONFIG_HOME, "evpagent", "prompts", "dynamic_prompts")
-      : join(homeDir, ".config", "evpagent", "prompts", "dynamic_prompts");
-  }
-}
-
-function getScriptDir() {
-  if (typeof __dirname !== 'undefined') return __dirname;
-  return dirname(fileURLToPath(import.meta.url));
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// File Setup
-// ═══════════════════════════════════════════════════════════════════════════════
-
-function ensureConfigFiles() {
-  const userConfigDir = getConfigDir();
-  const scriptDir = getScriptDir();
-  const distConfigDir = join(scriptDir, 'prompts', 'config');
-
-  if (!existsSync(userConfigDir)) {
-    mkdirSync(userConfigDir, { recursive: true });
-  }
-
-  for (const file of ['system_prompt.md', 'Rephrase.md', 'Loop.md']) {
-    const src = join(distConfigDir, file);
-    const dest = join(userConfigDir, file);
-    if (existsSync(src)) cpSync(src, dest, { force: true });
-  }
-
-  return userConfigDir;
-}
-
-function ensurePromptFiles() {
-  const userPromptsDir = getPromptsDir();
-  const scriptDir = getScriptDir();
-  const distPromptsDir = join(scriptDir, 'prompts', 'dynamic_prompts');
-
-  for (const subdir of ['Loop', 'Rephrase']) {
-    const userDir = join(userPromptsDir, subdir);
-    const distDir = join(distPromptsDir, subdir);
-    if (!existsSync(userDir)) mkdirSync(userDir, { recursive: true });
-    if (existsSync(distDir)) {
-      for (const file of readdirSync(distDir)) {
-        cpSync(join(distDir, file), join(userDir, file), { force: true });
-      }
-    }
-  }
-
-  return userPromptsDir;
-}
-
-// Setup files
-ensureConfigFiles();
-ensurePromptFiles();
+import { SysAgent } from '../system/agents/SysAgent/index.mjs';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Agent Setup
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const agentConfig = {
-  baseURL: process.env.SEARCH_MODEL_BASE_URL,
-  apiKey: process.env.SEARCH_MODEL_API_KEY,
-  modelId: process.env.SEARCH_MODEL_ID,
-};
-
-const sysAgent = createSysAgent(agentConfig);
+const sysAgent = new SysAgent();
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CLI Interface
@@ -118,81 +29,119 @@ const rl = readline.createInterface({
   output: process.stdout,
 });
 
-const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-let spinIndex = 0;
-let spinInterval = null;
-
-function startSpinner() {
-  spinInterval = setInterval(() => {
-    spinIndex++;
-    process.stdout.write(`\r${frames[spinIndex % frames.length]} thinking...`);
-  }, 80);
+function print(msg) {
+  process.stdout.write(msg + '\n');
 }
 
-function stopSpinner() {
-  if (spinInterval) {
-    clearInterval(spinInterval);
-    spinInterval = null;
-    process.stdout.write('\r' + ' '.repeat(30) + '\r');
-  }
-}
-
-async function askQuestion(query) {
+async function askQuestion() {
   return new Promise((resolve) => {
-    rl.question(`User: ${query}\nAgent: `, (answer) => {
+    rl.question('User: ', (answer) => {
       resolve(answer);
     });
   });
 }
 
 async function runQuery(query) {
-  startSpinner();
-  let output = '';
+  let responseBuffer = '';
+  let waitingForResponse = false;
 
   try {
     for await (const chunk of sysAgent.stream(query)) {
-      if (chunk?.choices?.[0]?.delta?.content) {
-        output += chunk.choices[0].delta.content;
-      }
+      // Tool call - print name and params
       if (chunk?.choices?.[0]?.delta?.tool_calls) {
         const tc = chunk.choices[0].delta.tool_calls[0];
-        output += `\n  → ${tc.name}\n`;
+        const params = Object.entries(tc.args || {})
+          .map(([k, v]) => `${k}=${typeof v === 'string' ? v : JSON.stringify(v)}`)
+          .join(', ');
+        print(`${tc.name}(${params})`);
+
+        // After report tool, next content is the response
+        if (tc.name === 'report') {
+          waitingForResponse = true;
+        }
+      }
+
+      // Content - buffer only after report tool
+      if (chunk?.choices?.[0]?.delta?.content) {
+        const content = chunk.choices[0].delta.content;
+        if (waitingForResponse) {
+          responseBuffer += content;
+          waitingForResponse = false;
+        }
       }
     }
-    stopSpinner();
-    console.log(output || '(no output)');
+
+    // Print response
+    if (responseBuffer) {
+      print(`Agent: ${responseBuffer}`);
+    } else {
+      print('Agent: (no output)');
+    }
   } catch (error) {
-    stopSpinner();
-    console.error(`Error: ${error.message}`);
+    print(`Error: ${error.message}`);
   }
 
-  console.error(formatStatsReport());
-  resetResponseStats();
+  // Print stats
+  const stats = sysAgent.getStats();
+  const total = stats.vectorHits + stats.webRequests;
+  if (total > 0) {
+    const hitRate = Math.round((stats.vectorHits / total) * 100);
+    print(`[Cache: ${hitRate}% (${stats.vectorHits}/${total})]`);
+  }
+  sysAgent.resetStats();
+}
+
+async function handleReset(command) {
+  const arg = command.split(' ')[1]?.toLowerCase();
+
+  if (arg === 'db') {
+    print('Clearing vector DB...');
+    await sysAgent.resetVectorDB();
+    print('Vector DB cleared.');
+  } else if (arg === 'prompts') {
+    print('Resetting prompts to default...');
+    sysAgent.resetPrompts();
+    print('Prompts reset.');
+  } else if (arg === 'all') {
+    print('Resetting everything...');
+    await sysAgent.resetVectorDB();
+    sysAgent.resetPrompts();
+    print('All reset complete.');
+  } else {
+    print('Usage: /reset [db|prompts|all]');
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Main Loop
 // ═══════════════════════════════════════════════════════════════════════════════
 
-console.log('═══════════════════════════════════════════════════════════════');
-console.log('          EVPAgent - Ask questions no one ever asked');
-console.log('═══════════════════════════════════════════════════════════════\n');
+print('═══════════════════════════════════════════════════════════════');
+print('          EVPAgent - Ask questions no one ever asked');
+print('═══════════════════════════════════════════════════════════════');
+print('Commands: /reset [db|prompts|all] | /exit\n');
 
 async function main() {
-  const initialQuery = await askQuestion('');
-
-  if (initialQuery.trim()) {
-    await runQuery(initialQuery);
-  }
-
-  // Keep asking until user exits
   while (true) {
-    const query = await askQuestion('');
-    if (!query.trim() || query.toLowerCase() === 'exit') {
-      console.log('Goodbye!');
+    const input = await askQuestion();
+    const trimmed = input.trim();
+
+    if (!trimmed) continue;
+
+    // Handle commands
+    if (trimmed.toLowerCase() === '/exit') {
+      print('Goodbye!');
       break;
     }
-    await runQuery(query);
+
+    if (trimmed.toLowerCase().startsWith('/reset')) {
+      await handleReset(trimmed);
+      print('');
+      continue;
+    }
+
+    await runQuery(trimmed);
+    print('');
   }
 
   rl.close();

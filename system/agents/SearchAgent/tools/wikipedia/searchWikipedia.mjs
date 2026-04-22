@@ -35,24 +35,31 @@ function reportSearchResult(query, results) {
   try {
     const promptsDir = getPromptsDir();
     const manifestPath = join(promptsDir, 'session_manifest.json');
-    
+
     let manifest = { searchHistory: [], searchSuccess: false };
     if (existsSync(manifestPath)) {
-      manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'));
+      try {
+        const content = readFileSync(manifestPath, 'utf-8').trim();
+        if (content) {
+          manifest = JSON.parse(content);
+        }
+      } catch {
+        // File exists but invalid JSON - start fresh
+      }
     }
-    
+
     if (!manifest.searchHistory) manifest.searchHistory = [];
-    
+
     manifest.searchHistory.push({
       tool: 'searchWikipedia',
       arguments: { query, limit: 5 },
-      result: results.slice(0, 1000), // Truncate for storage
+      result: results.slice(0, 1000),
       timestamp: new Date().toISOString()
     });
-    
+
     writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), 'utf-8');
   } catch (error) {
-    console.error("[searchWikipedia] Failed to report result:", error.message);
+    console.error("[searchWikipedia] reportSearchResult() failed:", error.message);
   }
 }
 
@@ -65,10 +72,10 @@ const wikipediaSearchSchema = z.object({
   limit: z.number().optional().default(5).describe('Number of results: 3 for simple facts, 5 for default, 10+ for comprehensive research'),
   type: z.enum(['text', 'title', 'nearmatch']).optional().default('text')
     .describe('Type of search: text (full text), title (title only), nearmatch (near match)'),
-  useCache: z.boolean().optional().default(true).describe('Whether to use vector cache for retrieval'),
+  // useCache: z.boolean().optional().default(true).describe('Whether to use vector cache for retrieval'),
 });
 
-async function wikipediaSearch({ query, limit = 5, type = 'text', useCache = true }) {
+async function wikipediaSearch({ query, limit = 5, type = 'text', useCache = false }) {
   // ==========================================================================
   // Step 1: Check vector cache first if useCache is true
   // ==========================================================================
@@ -87,7 +94,7 @@ async function wikipediaSearch({ query, limit = 5, type = 'text', useCache = tru
       }
     } catch (error) {
       // Cache lookup failed, continue to web search
-      console.error("[searchWikipedia] Cache lookup failed:", error.message);
+      console.error("[searchWikipedia] wikipediaSearch() cache lookup failed:", error.message);
     }
   }
 
@@ -154,7 +161,7 @@ async function wikipediaSearch({ query, limit = 5, type = 'text', useCache = tru
 
     if (resultsForCache.length > 0) {
       upsertWikipediaSearch(query, resultsForCache).catch((error) => {
-        console.error("[searchWikipedia] Failed to cache results:", error.message);
+        console.error("[searchWikipedia] wikipediaSearch() failed to cache results:", error.message);
       });
     }
 

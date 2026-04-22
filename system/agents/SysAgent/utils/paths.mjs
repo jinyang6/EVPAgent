@@ -2,8 +2,9 @@
  * Path utilities for SysAgent
  */
 
-import { join } from "path";
+import { join, dirname } from "path";
 import { homedir } from "os";
+import { fileURLToPath } from "url";
 
 /**
  * Get base directory for user config
@@ -31,4 +32,14 @@ export function getPromptsDir() {
  */
 export function getConfigDir() {
   return join(getBaseDir(), "EVPAgent", "prompts", "config");
+}
+
+/**
+ * Get directory of the running script (for bundled resources)
+ */
+export function getScriptDir() {
+  if (typeof __dirname !== "undefined" && __dirname !== import.meta.url) {
+    return __dirname;
+  }
+  return dirname(fileURLToPath(import.meta.url));
 }

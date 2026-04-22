@@ -59,10 +59,6 @@ export function getEmbeddings() {
       apiKey: process.env.EMBEDDING_MODEL_API_KEY,
       configuration: {
         baseURL: process.env.EMBEDDING_MODEL_BASE_URL,
-        defaultHeaders: {
-          "HTTP-Referer": "https://github.com/jinyang6/EVPAgent",
-          "X-Title": "EVPAgent",
-        },
       },
     });
   }
@@ -110,6 +106,23 @@ export async function getTable() {
     }
   }
   return table;
+}
+
+// ============================================================================
+// Reset
+// ============================================================================
+
+/**
+ * Reset vector DB - delete all data and reset singleton instances
+ */
+export async function resetVectorDB() {
+  const { rmSync, existsSync } = await import("fs");
+  const dbPath = getVectorDBPath();
+  if (existsSync(dbPath)) {
+    rmSync(dbPath, { recursive: true, force: true });
+  }
+  db = null;
+  table = null;
 }
 
 // ============================================================================
@@ -165,7 +178,7 @@ export async function getLastEditedTime(pageTitle) {
 
     return new Date().toISOString(); // Fallback to current time
   } catch (error) {
-    console.error(`Failed to get last edited time for ${pageTitle}:`, error.message);
+    console.error(`[VectorDB] getLastEditedTime() failed for ${pageTitle}:`, error.message);
     return new Date().toISOString(); // Fallback
   }
 }
@@ -244,7 +257,8 @@ export async function searchVectorDB(query, k = 3, filterType) {
 
     return formattedResults;
   } catch (error) {
-    console.error("Vector DB search failed:", error.message);
+    // Don't fail the search - just log and return empty (will use web fallback)
+    console.error(`[VectorDB] searchVectorDB() failed: ${error.message}. Falling back to web search.`);
     return [];
   }
 }
@@ -294,6 +308,7 @@ export async function upsertWikipediaSearch(query, results) {
     await tbl.add(records);
   } catch (error) {
     // Don't throw - caching failure shouldn't break the tool
+    console.error(`[VectorDB] upsertWikipediaSearch() failed: ${error.message}`);
   }
 }
 

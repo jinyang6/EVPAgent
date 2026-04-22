@@ -53,7 +53,7 @@ function reportFetchResult(page, section, content) {
     
     writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), 'utf-8');
   } catch (error) {
-    console.error("[fetchWikiPage] Failed to report result:", error.message);
+    console.error("[fetchWikiPage] reportFetchResult() failed:", error.message);
   }
 }
 
@@ -64,7 +64,7 @@ const wikiPageSchema = z.object({
   page: z.string().describe('Wikipedia page title (e.g., "Mars")'),
   section: z.string().optional().describe('Section title to fetch (e.g., "Formation", omit for overview)'),
   limit: z.number().optional().default(3).describe('Number of results from vector cache (top-k)'),
-  useCache: z.boolean().optional().default(true).describe('Whether to use vector cache for retrieval'),
+  // useCache: z.boolean().optional().default(true).describe('Whether to use vector cache for retrieval'),
 });
 
 /**
@@ -90,111 +90,63 @@ function decodeHtmlEntities(str) {
  * @param {string} pageTitle - Title of the Wikipedia page for resolving relative links
  * @returns {string} Processed Markdown
  */
-function htmlToMarkdown(html, pageTitle) {
+function htmlToMarkdown(html) {
   const $ = cheerio.load(html);
-  
-  // Configure turndown with custom rule to handle escaped brackets
-  const turndownService = new TurndownService({
+
+  // Setup turndown
+  const turndown = new TurndownService({
     headingStyle: "atx",
     bulletListMarker: "-",
     codeBlockStyle: "fenced",
   });
-  
-  // Add rule to unescape citation brackets like \[1\] or \[2\]
-  turndownService.addRule("unEscapeCitationBrackets", {
-    filter: function(node) {
-      return node.nodeName === "TEXT";
-    },
-    replacement: function(content) {
-      return content.replace(/\\\[(\d+)\\\]/g, "[$1]");
-    },
-  });
 
-  // 1. Build citation map from references section
-  const citationMap = new Map();
-  let citationIndex = 1;
-
+  // Build citation lookup map (O(1) instead of O(n) find)
+  const citations = new Map();
+  let idx = 1;
   $("ol.references li").each((_, el) => {
     const $el = $(el);
-    const rawId = $el.attr("id") || "";
-    const decodedId = decodeHtmlEntities(rawId);
-    const refLink = $el.find("a.external").first().attr("href") || "";
-    const refText = $el.text().trim();
-    
-    const cleanText = refText.replace(/^\[\d+\]\s*/, "").slice(0, 150);
-    
-    // Skip broken citations (Cite error: named reference X was invoked but never defined)
-    if (cleanText.includes("Cite error") || cleanText.includes("invoked but never defined")) {
-      return;
-    }
-    
-    const citation = { index: citationIndex, text: cleanText, url: refLink };
-    
-    // Store with various forms for reliable lookup
-    citationMap.set(rawId, citation);
-    citationMap.set(decodedId, citation);
-    citationIndex++;
+    const text = $el.text().trim().replace(/^\[\d+\]\s*/, "");
+    if (text.includes("Cite error")) return;
+    const id = $el.attr("id") || "";
+    const url = $el.find("a.external").attr("href") || "";
+    citations.set(id, { index: idx++, text: text.slice(0, 150), url });
   });
 
-  // 2. Replace citation superscripts with inline markers
-  $("sup").each((_, el) => {
+  // Replace citation superscripts with inline links
+  $("sup.reference, sup.citation").each((_, el) => {
     const $el = $(el);
-    const classes = $el.attr("class") || "";
-    
-    if (classes.includes("reference") || classes.includes("citation")) {
-      const rawHref = $el.find("a").attr("href") || "";
-      const decodedHref = decodeHtmlEntities(rawHref);
-      const match = decodedHref.match(/#(cite_note-[^"]+)/);
-      const refId = match ? match[1] : null;
-      
-      if (refId && citationMap.has(refId)) {
-        const citation = citationMap.get(refId);
-        if (citation.url) {
-          $el.replaceWith(`[${citation.index}](${citation.url})`);
-        } else {
-          $el.replaceWith(`[${citation.index}]`);
-        }
-      } else {
-        $el.replaceWith($el.text().replace(/[\[\]]/g, ""));
-      }
+    const href = decodeHtmlEntities($el.find("a").attr("href") || "");
+    const match = href.match(/#(cite_note-[^"]+)/);
+    const citeId = match && [...citations.keys()].find(k => k.includes(match[1]));
+    const citation = citeId && citations.get(citeId);
+    if (citation) {
+      $el.replaceWith(citation.url ? `[${citation.index}](${citation.url})` : `[${citation.index}]`);
+    } else {
+      $el.replaceWith($el.text().replace(/[\[\]]/g, ""));
     }
   });
 
-  // 3. Convert internal wiki links to full URLs
-  $("a").each((_, el) => {
-    const $el = $(el);
-    let href = $el.attr("href") || "";
-    
-    if (!href || href.startsWith("//") || href.startsWith("http")) return;
-    
-    if (href.startsWith("/wiki/")) {
-      const encodedTitle = href.slice(6);
-      $el.attr("href", `https://en.wikipedia.org/wiki/${encodedTitle}`);
-    } else if (href.startsWith("/w/")) {
-      const titleMatch = href.match(/title=([^&]+)/);
-      if (titleMatch) {
-        $el.attr("href", `https://en.wikipedia.org/wiki/${titleMatch[1]}`);
-      }
-    }
+  // Convert wiki links to full URLs
+  $("a[href^='/wiki/']").each((_, el) => {
+    let href = $(el).attr("href");
+    // Decode URL encoding safely (e.g. %28 -> (), %29 -> ))
+    try { href = decodeURIComponent(href); } catch {}
+    $(el).attr("href", `https://en.wikipedia.org${href}`);
   });
 
-  // 4. Remove edit section links
-  $(".mw-editsection").remove();
-  $(".mw-editsection-bracket").parent().remove();
+  // Remove non-content: edit links, references, navboxes, styles
+  $(".mw-editsection, .mw-editsection-bracket, .references, ol.references, .mw-references-wrap").remove();
+  $(".side-box, .infobox, .navbox, .metadata, .thumb, .multiimage, .tmulti, table.mw-wiki").remove();
+  $("style[data-mw-deduplicate], style").remove();
 
-  // 5. Remove reference list from bottom
-  $(".references, ol.references, .mw-references-wrap").remove();
+  // Remove elements containing cite error messages
+  $("[class*='Cite'], [class*='error']").remove();
 
-  // 6. Clean up empty elements
-  $("div.empty, span.empty").remove();
-
-  // 7. Convert to markdown
-  let markdown = turndownService.turndown($.html());
-  
-  // 8. Clean up any remaining escaped brackets
-  markdown = markdown.replace(/\\\[(\d+)\\\]/g, "[$1]");
-
-  return markdown;
+  return turndown.turndown($.html())
+    .replace(/\\\[(\d+)\\\]/g, "[$1]")
+    // Fix Turndown escaping of parentheses in URLs
+    .replace(/\\\(/g, "(")
+    .replace(/\\\)/g, ")");
 }
 
 /**
@@ -229,7 +181,7 @@ function extractLeadText(html) {
 /**
  * Fetch and parse Wikipedia page using MediaWiki API
  */
-async function fetchWikiPage({ page, section, limit = 3, useCache = true }) {
+async function fetchWikiPage({ page, section, limit = 3, useCache = false }) {
   // Determine filter type based on whether section is provided
   const filterType = section !== undefined ? "pageSection" : "pageOverview";
   // Search query: use "page section" for semantic search
@@ -259,7 +211,7 @@ async function fetchWikiPage({ page, section, limit = 3, useCache = true }) {
       }
     } catch (error) {
       // Cache lookup failed, continue to web fetch
-      console.error("[fetchWikiPage] Cache lookup failed:", error.message);
+      console.error("[fetchWikiPage] fetchWikiPage() cache lookup failed:", error.message);
     }
   }
 
@@ -275,7 +227,7 @@ async function fetchWikiPage({ page, section, limit = 3, useCache = true }) {
     const params = {
       action: "parse",
       page: page,
-      prop: "text|sections",
+      prop: "text|tocdata",
       format: "json",
     };
 
@@ -293,7 +245,7 @@ async function fetchWikiPage({ page, section, limit = 3, useCache = true }) {
     }
 
     const html = data.parse.text?.["*"] || "";
-    const sectionsData = data.parse.sections || [];
+    const sectionsData = data.parse.tocdata?.sections || [];
     const pageTitle = data.parse.title || page;
 
     // Handle section-specific fetch
@@ -328,13 +280,13 @@ async function fetchWikiPage({ page, section, limit = 3, useCache = true }) {
 
       const sectionHtml = sectionResponse.data?.parse?.text?.["*"] || "";
       const markdown = htmlToMarkdown(sectionHtml, pageTitle);
-      const content = `# ${pageTitle} - ${section}\n**Source:** ${sectionUrl}\n\n## ${section}\n\n${markdown.slice(0, 4000)}`;
+      const content = `# ${pageTitle} - ${section}\n**Source:** ${sectionUrl}\n\n${markdown}`;
 
       // Record web request and article, then store to vector DB (fire and forget)
       recordWebRequest("section");
       recordArticle(page);
-      upsertWikiPage(page, section, markdown.slice(0, 4000)).catch((error) => {
-        console.error("[fetchWikiPage] Failed to cache section:", error.message);
+      upsertWikiPage(page, section, markdown).catch((error) => {
+        console.error("[fetchWikiPage] fetchWikiPage() failed to cache section:", error.message);
       });
 
       // Report result
@@ -348,7 +300,7 @@ async function fetchWikiPage({ page, section, limit = 3, useCache = true }) {
 
     // Build result with overview and section list
     let result = `# ${pageTitle}\n**Source:** ${pageUrl}\n\n`;
-    result += `## Overview\n${leadText.slice(0, 800)}\n\n`;
+    result += `## Overview\n${leadText}\n\n`;
     result += `## Sections (${sectionsData.length})\n`;
 
     if (sectionsData.length > 0) {
@@ -359,13 +311,13 @@ async function fetchWikiPage({ page, section, limit = 3, useCache = true }) {
       result += `No sections found.\n`;
     }
 
-    result += `\n---\n\n**Full content available - ask to fetch specific sections by title.**`;
+    result += `\n---\n\n**Full section available - ask to fetch specific sections by anchor.**`;
 
     // Record web request and article, then store overview to vector DB (fire and forget)
     recordWebRequest("page");
     recordArticle(page);
     upsertWikiPage(page, "", result).catch((error) => {
-      console.error("[fetchWikiPage] Failed to cache overview:", error.message);
+      console.error("[fetchWikiPage] fetchWikiPage() failed to cache overview:", error.message);
     });
 
     // Report result
@@ -389,7 +341,7 @@ export const fetchWikiPageTool = tool(
 
 Parameters:
 - page (required): Wikipedia page title (e.g., "Mars")
-- section (optional): Section title (e.g., "Formation", omit for overview)
+- section (optional): Section anchor (e.g., "Twin_rover", omit for overview)
 - limit (optional, default=3): Vector cache top-k
 - useCache (optional, default=true): Set to false to force web fetch
 

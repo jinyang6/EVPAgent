@@ -1,14 +1,12 @@
 # EVPAgent
 
-A LangGraph-based AI agent with web search and fetch capabilities and Ink TUI.
+A multi-agent system with web search and fetch capabilities.
 
 ## Architecture
 
 ```
 src/
-├── cli.jsx                # CLI entry point
-└── tui/
-    └── App.jsx            # Ink TUI component
+└── cli.js                 # CLI entry point (Node.js readline)
 
 system/agents/
 ├── SysAgent/              # Main pipeline orchestrator
@@ -71,5 +69,3 @@ const chunks = await agent.invoke("query");
 ## Dependencies
 
 - **@langchain/langgraph** — Agent workflow framework
-- **[ink](https://github.com/vadimdemedes/ink)** — React for CLI (Vercel)
-- **react** — UI component model for Ink

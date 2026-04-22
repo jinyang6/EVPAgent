@@ -9,11 +9,14 @@ const COMPOSER_SYSTEM_PROMPT = `You are the PromptComposerAgent, responsible for
 
 Your task:
 1. Read the base system prompt
-2. List available prompts in Rephrase and Loop folders
-3. Select ONE Rephrase prompt and ONE Loop prompt
-4. Call combinePrompts ONCE with your selection
+2. Call list available prompts for BOTH "Rephrase" folder and "Loop" folder
+3. Select prompts for BOTH "Rephrase" folder and "Loop" folder
+4. Call combinePrompts with your selection
+5. Done
 
-IMPORTANT: After calling combinePrompts, simply return a message saying "Done" - do NOT call any more tools.`;
+IMPORTANT: 
+- MUST follow the above steps
+- After calling combinePrompts, simply return a message saying "Done" - do NOT call any more tools.`;
 
 /**
  * This function is the agent node's callback function,
