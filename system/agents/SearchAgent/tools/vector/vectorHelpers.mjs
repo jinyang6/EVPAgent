@@ -265,47 +265,36 @@ export async function searchVectorDB(query, k = 3, filterType) {
 
 /**
  * Store a wikipediaSearch result to the vector database
+ * Stores the entire formatted search result as a single record
  * @param {string} query - The original search query
- * @param {Array<{title: string, url: string, snippet: string}>} results - Search results
+ * @param {string} fullResultText - The complete formatted search result text
  * @returns {Promise<void>}
  */
-export async function upsertWikipediaSearch(query, results) {
+export async function upsertWikipediaSearch(query, fullResultText) {
   try {
     const tbl = await getTable();
     const embeddings = getEmbeddings();
 
-    const records = [];
+    // Generate ID based on query
+    const id = generateDocId("wikipediaSearch", query, "", "search_result");
 
-    for (const result of results) {
-      // Build API URL for this article (used for retrieval)
-      const apiUrl = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(result.title)}`;
+    // Build search URL that reproduces the search in browser
+    const searchUrl = `https://en.wikipedia.org/w/index.php?search=${encodeURIComponent(query)}`;
 
-      // Get last edited time
-      const lastEdited = await getLastEditedTime(result.title);
+    // Embed the entire search result as one text
+    const vector = await embeddings.embedQuery(fullResultText);
 
-      // Create document content
-      const text = `Title: ${result.title}\nURL: ${result.url}\nSnippet: ${result.snippet}`;
-
-      // Generate ID
-      const id = generateDocId("wikipediaSearch", result.title, "", apiUrl);
-
-      // Embed the text
-      const vector = await embeddings.embedQuery(text);
-
-      records.push({
-        id,
-        vector,
-        text,
-        type: "wikipediaSearch",
-        article: result.title,
-        section: "",
-        url: apiUrl,
-        lastEdited,
-      });
-    }
-
-    // Add to table
-    await tbl.add(records);
+    // Store as single record
+    await tbl.add([{
+      id,
+      vector,
+      text: fullResultText,
+      type: "wikipediaSearch",
+      article: query,
+      section: "",
+      url: searchUrl,
+      lastEdited: new Date().toISOString(),
+    }]);
   } catch (error) {
     // Don't throw - caching failure shouldn't break the tool
     console.error(`[VectorDB] upsertWikipediaSearch() failed: ${error.message}`);
@@ -314,9 +303,10 @@ export async function upsertWikipediaSearch(query, results) {
 
 /**
  * Store a wikiPage (overview or section) to the vector database
+ * Stores the entire content as a single vector record for semantic search
  * @param {string} page - Article title
  * @param {string|null} section - Section anchor text (null/empty for overview)
- * @param {string} content - Page/section content (will be chunked)
+ * @param {string} content - Page/section content (stored as whole, not chunked)
  * @returns {Promise<void>}
  */
 export async function upsertWikiPage(page, section, content) {
@@ -330,39 +320,31 @@ export async function upsertWikiPage(page, section, content) {
     // Get last edited time (only for overview, not sections to reduce API calls)
     const lastEdited = await getLastEditedTime(page);
 
-    // Chunk the content
-    const { splitText } = await import("./chunker.mjs");
-    const chunks = splitText(content);
+    // Generate ID for the page/section
+    const id = generateDocId(
+      section ? "pageSection" : "pageOverview",
+      page,
+      section || "",
+      url
+    );
 
-    const records = [];
+    // Embed the entire content as a single vector
+    const vector = await embeddings.embedQuery(content);
 
-    for (let i = 0; i < chunks.length; i++) {
-      const id = generateDocId(
-        section ? "pageSection" : "pageOverview",
-        page,
-        section || "",
-        `${url}#chunk-${i}`
-      );
-
-      // Embed the chunk
-      const vector = await embeddings.embedQuery(chunks[i]);
-
-      records.push({
-        id,
-        vector,
-        text: chunks[i],
-        type: section ? "pageSection" : "pageOverview",
-        article: page,
-        section: section || "",
-        url: url,
-        lastEdited,
-      });
-    }
-
-    // Add to table
-    await tbl.add(records);
+    // Store as single record
+    await tbl.add([{
+      id,
+      vector,
+      text: content,
+      type: section ? "pageSection" : "pageOverview",
+      article: page,
+      section: section || "",
+      url: url,
+      lastEdited,
+    }]);
   } catch (error) {
     // Don't throw - caching failure shouldn't break the tool
+    console.error(`[VectorDB] upsertWikiPage() failed: ${error.message}`);
   }
 }
 

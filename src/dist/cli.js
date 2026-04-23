@@ -1,115 +1,4 @@
 #!/usr/bin/env node
-var __defProp = Object.defineProperty;
-var __getOwnPropNames = Object.getOwnPropertyNames;
-var __esm = (fn, res) => function __init() {
-  return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
-};
-var __export = (target, all) => {
-  for (var name in all)
-    __defProp(target, name, { get: all[name], enumerable: true });
-};
-
-// system/agents/SearchAgent/tools/vector/chunker.mjs
-var chunker_exports = {};
-__export(chunker_exports, {
-  getChunkingInfo: () => getChunkingInfo,
-  simpleChunk: () => simpleChunk,
-  splitText: () => splitText
-});
-function splitText(text, chunkSize = CHUNK_SIZE, chunkOverlap = CHUNK_OVERLAP) {
-  if (!text || text.length === 0) {
-    return [];
-  }
-  if (text.length <= chunkSize) {
-    return [text];
-  }
-  const chunks = [];
-  let startIndex = 0;
-  while (startIndex < text.length) {
-    let endIndex = startIndex + chunkSize;
-    if (endIndex < text.length) {
-      let breakPoint = -1;
-      for (let i = endIndex; i > Math.max(startIndex, endIndex - 100); i--) {
-        if (text[i] === " " || text[i] === "\n" || text[i] === "	") {
-          breakPoint = i;
-          break;
-        }
-      }
-      if (breakPoint > startIndex) {
-        endIndex = breakPoint;
-      }
-    }
-    const chunk = text.slice(startIndex, endIndex).trim();
-    if (chunk.length > 0) {
-      chunks.push(chunk);
-    }
-    if (endIndex < text.length) {
-      startIndex = endIndex;
-      if (chunkOverlap > 0 && startIndex + chunkOverlap < text.length) {
-        let overlapStart = startIndex;
-        for (let i = startIndex + chunkOverlap; i > startIndex; i--) {
-          if (text[i] === " " || text[i] === "\n") {
-            overlapStart = i + 1;
-            break;
-          }
-        }
-        startIndex = overlapStart;
-      }
-    } else {
-      break;
-    }
-  }
-  return chunks.filter((chunk) => chunk.length > 0);
-}
-function simpleChunk(text, chunkSize = CHUNK_SIZE, chunkOverlap = CHUNK_OVERLAP) {
-  if (!text || text.length === 0) {
-    return [];
-  }
-  if (text.length <= chunkSize) {
-    return [text];
-  }
-  const chunks = [];
-  let start = 0;
-  while (start < text.length) {
-    let end = start + chunkSize;
-    if (end < text.length) {
-      let breakPoint = text.lastIndexOf(" ", end);
-      if (breakPoint <= start) {
-        breakPoint = text.indexOf(" ", end);
-      }
-      if (breakPoint === -1 || breakPoint === start) {
-        breakPoint = Math.min(start + chunkSize, text.length);
-      }
-      end = breakPoint;
-    }
-    const chunk = text.slice(start, end).trim();
-    if (chunk.length > 0) {
-      chunks.push(chunk);
-    }
-    start = end;
-    if (start <= chunks.length * chunkSize - chunkSize) {
-      start = Math.min(end + 1, text.length);
-    }
-  }
-  return chunks;
-}
-function getChunkingInfo(text, chunkSize = CHUNK_SIZE) {
-  const chunks = splitText(text, chunkSize);
-  return {
-    chunkCount: chunks.length,
-    chunkSize,
-    originalLength: text.length,
-    averageChunkSize: chunks.length > 0 ? Math.round(chunks.reduce((sum, c) => sum + c.length, 0) / chunks.length) : 0,
-    sizes: chunks.map((c) => c.length)
-  };
-}
-var CHUNK_SIZE, CHUNK_OVERLAP;
-var init_chunker = __esm({
-  "system/agents/SearchAgent/tools/vector/chunker.mjs"() {
-    CHUNK_SIZE = 500;
-    CHUNK_OVERLAP = 50;
-  }
-});
 
 // src/cli.js
 import "dotenv/config";
@@ -510,106 +399,32 @@ async function searchVectorDB(query, k = 3, filterType) {
     return [];
   }
 }
-async function upsertWikipediaSearch(query, results) {
-  try {
-    const tbl = await getTable();
-    const embeddings = getEmbeddings();
-    const records = [];
-    for (const result of results) {
-      const apiUrl = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(result.title)}`;
-      const lastEdited = await getLastEditedTime(result.title);
-      const text = `Title: ${result.title}
-URL: ${result.url}
-Snippet: ${result.snippet}`;
-      const id = generateDocId("wikipediaSearch", result.title, "", apiUrl);
-      const vector = await embeddings.embedQuery(text);
-      records.push({
-        id,
-        vector,
-        text,
-        type: "wikipediaSearch",
-        article: result.title,
-        section: "",
-        url: apiUrl,
-        lastEdited
-      });
-    }
-    await tbl.add(records);
-  } catch (error) {
-    console.error(`[VectorDB] upsertWikipediaSearch() failed: ${error.message}`);
-  }
-}
 async function upsertWikiPage(page, section, content) {
   try {
     const tbl = await getTable();
     const embeddings = getEmbeddings();
     const url = buildWikiUrl(page, section);
     const lastEdited = await getLastEditedTime(page);
-    const { splitText: splitText2 } = await Promise.resolve().then(() => (init_chunker(), chunker_exports));
-    const chunks = splitText2(content);
-    const records = [];
-    for (let i = 0; i < chunks.length; i++) {
-      const id = generateDocId(
-        section ? "pageSection" : "pageOverview",
-        page,
-        section || "",
-        `${url}#chunk-${i}`
-      );
-      const vector = await embeddings.embedQuery(chunks[i]);
-      records.push({
-        id,
-        vector,
-        text: chunks[i],
-        type: section ? "pageSection" : "pageOverview",
-        article: page,
-        section: section || "",
-        url,
-        lastEdited
-      });
-    }
-    await tbl.add(records);
+    const id = generateDocId(
+      section ? "pageSection" : "pageOverview",
+      page,
+      section || "",
+      url
+    );
+    const vector = await embeddings.embedQuery(content);
+    await tbl.add([{
+      id,
+      vector,
+      text: content,
+      type: section ? "pageSection" : "pageOverview",
+      article: page,
+      section: section || "",
+      url,
+      lastEdited
+    }]);
   } catch (error) {
+    console.error(`[VectorDB] upsertWikiPage() failed: ${error.message}`);
   }
-}
-function formatCachedSearchResults(cachedResults) {
-  let output = "[Cache hit] Found relevant content:\n\n";
-  const grouped = {
-    wikipediaSearch: [],
-    pageOverview: [],
-    pageSection: []
-  };
-  for (const result of cachedResults) {
-    const type = result.metadata?.type || "unknown";
-    if (grouped[type]) {
-      grouped[type].push(result);
-    }
-  }
-  if (grouped.wikipediaSearch.length > 0) {
-    output += "## Search Results (from cache)\n";
-    for (const r of grouped.wikipediaSearch) {
-      const meta = r.metadata;
-      output += `[${meta.article}] ${meta.url}
-`;
-      output += `${r.document.slice(0, 200)}...
-
-`;
-    }
-  }
-  if (grouped.pageOverview.length > 0 || grouped.pageSection.length > 0) {
-    output += "## Page Content (from cache)\n";
-    for (const r of [...grouped.pageOverview, ...grouped.pageSection]) {
-      const meta = r.metadata;
-      const sectionNote = meta.section ? ` (section: ${meta.section})` : "";
-      output += `**${meta.article}**${sectionNote}
-`;
-      output += `Source: ${meta.url}
-`;
-      output += `${r.document.slice(0, 300)}...
-
-`;
-    }
-  }
-  return output;
 }
 
 // system/agents/SearchAgent/tools/stats.mjs
@@ -623,8 +438,6 @@ function recordVectorHit(type = "unknown") {
 }
 function recordWebRequest(type = "unknown") {
   stats.webRequests++;
-}
-function recordQuery(query) {
 }
 function recordArticle(article) {
 }
@@ -677,26 +490,15 @@ function reportSearchResult(query, results) {
 var wikipediaSearchSchema = z4.object({
   query: z4.string().describe("The search query to find relevant Wikipedia articles"),
   limit: z4.number().optional().default(5).describe("Number of results: 3 for simple facts, 5 for default, 10+ for comprehensive research"),
-  type: z4.enum(["text", "title", "nearmatch"]).optional().default("text").describe("Type of search: text (full text), title (title only), nearmatch (near match)")
+  type: z4.enum(["text", "nearmatch"]).optional().default("text").describe("Type of search: text (full text) or nearmatch")
   // useCache: z.boolean().optional().default(true).describe('Whether to use vector cache for retrieval'),
 });
-async function wikipediaSearch({ query, limit = 5, type = "text", useCache = false }) {
-  if (useCache) {
-    try {
-      const cachedResults = await searchVectorDB(query, limit, "wikipediaSearch");
-      if (cachedResults && cachedResults.length > 0) {
-        recordVectorHit("search");
-        recordQuery(query);
-        const formatted = formatCachedSearchResults(cachedResults);
-        reportSearchResult(query, formatted);
-        return `${formatted}
-
-_Cache hit - retrieved from local vector database_`;
-      }
-    } catch (error) {
-      console.error("[searchWikipedia] wikipediaSearch() cache lookup failed:", error.message);
-    }
-  }
+async function wikipediaSearch({
+  query,
+  limit = 5,
+  type = "text"
+  /*, useCache = true */
+}) {
   const params = new URLSearchParams({
     action: "query",
     list: "search",
@@ -725,7 +527,6 @@ _Cache hit - retrieved from local vector database_`;
     let output = `Wikipedia Search Results for "${query}":
 
 `;
-    const resultsForCache = [];
     queryData.search.forEach((item, index) => {
       const articleUrl = `https://en.wikipedia.org/wiki/${encodeURIComponent(item.title.replace(/ /g, "_"))}`;
       const snippet = item.snippet?.replace(/<[^>]*>/g, "") || "No preview available";
@@ -736,19 +537,7 @@ _Cache hit - retrieved from local vector database_`;
       output += `${snippet}
 
 `;
-      resultsForCache.push({
-        title: item.title,
-        url: articleUrl,
-        snippet
-      });
     });
-    recordWebRequest("search");
-    recordQuery(query);
-    if (resultsForCache.length > 0) {
-      upsertWikipediaSearch(query, resultsForCache).catch((error) => {
-        console.error("[searchWikipedia] wikipediaSearch() failed to cache results:", error.message);
-      });
-    }
     reportSearchResult(query, output);
     return output.trim();
   } catch (error) {
@@ -772,10 +561,9 @@ Parameters:
   - insource: for article text search (e.g., insource:"olivine" "water")
   - incategory: for category search (e.g., incategory:"Space exploration")
 - limit (optional, default=5): Number of results (3=facts, 5=default, 10+=research)
-- type (optional): 'text', 'title', or 'nearmatch'
-- useCache (optional, default=true): Set to false to force web fetch
+- type (optional): 'text' or 'nearmatch'
 
-Returns: Titles, URLs, snippets. "[Cache hit]" if from cache.`,
+Returns: Page titles, URLs, snippets.`,
     schema: wikipediaSearchSchema
   }
 );
@@ -821,14 +609,14 @@ function reportFetchResult(page, section, content) {
 }
 var wikiPageSchema = z5.object({
   page: z5.string().describe('Wikipedia page title (e.g., "Mars")'),
-  section: z5.string().optional().describe('Section title to fetch (e.g., "Formation", omit for overview)'),
-  limit: z5.number().optional().default(3).describe("Number of results from vector cache (top-k)")
-  // useCache: z.boolean().optional().default(true).describe('Whether to use vector cache for retrieval'),
+  section: z5.string().optional().describe('Section anchor to fetch (e.g., "Formation", omit for overview)'),
+  limit: z5.number().optional().default(3).describe("Vector cache top-k for semantic search"),
+  useCache: z5.boolean().optional().default(true).describe("Whether to use vector cache for retrieval")
 });
 function decodeHtmlEntities(str) {
   return str.replace(/&#(\d+);/g, (_, code) => String.fromCharCode(parseInt(code, 10))).replace(/&#x([a-fA-F0-9]+);/g, (_, code) => String.fromCharCode(parseInt(code, 16))).replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'");
 }
-function htmlToMarkdown(html) {
+function htmlToMarkdown(html, pageTitle = "") {
   const $ = cheerio.load(html);
   const turndown = new TurndownService({
     headingStyle: "atx",
@@ -841,7 +629,7 @@ function htmlToMarkdown(html) {
     const $el = $(el);
     const text = $el.text().trim().replace(/^\[\d+\]\s*/, "");
     if (text.includes("Cite error")) return;
-    const id = $el.attr("id") || "";
+    const id = decodeHtmlEntities($el.attr("id") || "");
     const url = $el.find("a.external").attr("href") || "";
     citations.set(id, { index: idx++, text: text.slice(0, 150), url });
   });
@@ -852,9 +640,19 @@ function htmlToMarkdown(html) {
     const citeId = match && [...citations.keys()].find((k) => k.includes(match[1]));
     const citation = citeId && citations.get(citeId);
     if (citation) {
-      $el.replaceWith(citation.url ? `[${citation.index}](${citation.url})` : `[${citation.index}]`);
+      if (citation.url) {
+        $el.replaceWith(`[${citation.index}](${citation.url})`);
+      } else {
+        const citeUrl = `https://en.wikipedia.org/wiki/${encodeURIComponent(pageTitle)}#${citeId}`;
+        $el.replaceWith(`[${citation.index}](${citeUrl})`);
+      }
     } else {
-      $el.replaceWith($el.text().replace(/[\[\]]/g, ""));
+      const text = $el.text().replace(/[\[\]]/g, "").trim();
+      if (text) {
+        $el.replaceWith(`[${text}]`);
+      } else {
+        $el.remove();
+      }
     }
   });
   $("a[href^='/wiki/']").each((_, el) => {
@@ -869,32 +667,39 @@ function htmlToMarkdown(html) {
   $(".side-box, .infobox, .navbox, .metadata, .thumb, .multiimage, .tmulti, table.mw-wiki").remove();
   $("style[data-mw-deduplicate], style").remove();
   $("[class*='Cite'], [class*='error']").remove();
-  return turndown.turndown($.html()).replace(/\\\[(\d+)\\\]/g, "[$1]").replace(/\\\(/g, "(").replace(/\\\)/g, ")");
+  return turndown.turndown($.html()).replace(/\\\[(\d+)\\\]/g, "[$1]").replace(/\\\(/g, "(").replace(/\\\)/g, ")").replace(/\\_/g, "_");
 }
-function extractLeadText(html) {
+function extractLeadHtml(html) {
   const $ = cheerio.load(html);
-  $(".mw-editsection, .references, .printfooter, .catlinks, ol.references, .mw-references-wrap").remove();
-  let leadText = "";
-  $("p").each((i, el) => {
-    if (i >= 3) return false;
-    const text = $(el).text().trim();
-    if (text.length > 50) {
-      leadText += text + " ";
+  $(".shortdescription, .mw-empty-elt, figure, style, .mw-editsection").remove();
+  const container = $(".mw-parser-output");
+  if (!container.length) {
+    return "";
+  }
+  let leadHtml = "";
+  let reachedSection = false;
+  container.children().each((_, el) => {
+    const $el = $(el);
+    if ($el.is("h2") || $el.find("h2").length > 0 || $el.is("meta[property='mw:PageProp/toc']")) {
+      reachedSection = true;
+      return false;
     }
+    if ($el.is(".references, .mw-references-wrap, .catlinks, .printfooter")) {
+      return;
+    }
+    leadHtml += $.html(el) + "\n";
   });
-  leadText = leadText.replace(/\[\d+\]/g, "");
-  return leadText.replace(/\s+/g, " ").trim();
+  return `<div class="mw-parser-output">
+${leadHtml}</div>`;
 }
-async function fetchWikiPage({ page, section, limit = 3, useCache = false }) {
-  const filterType = section !== void 0 ? "pageSection" : "pageOverview";
-  const searchQuery = section !== void 0 ? `${page} ${section}` : page;
+async function fetchWikiPage({ page, section, limit = 3, useCache = true }) {
   if (useCache) {
+    const filterType = section !== void 0 ? "pageSection" : "pageOverview";
+    const searchQuery = section !== void 0 ? `${page} ${section}` : page;
     try {
       const cachedResults = await searchVectorDB(searchQuery, limit, filterType);
       if (cachedResults && cachedResults.length > 0) {
-        const matching = cachedResults.find((r) => {
-          return r.metadata?.article === page;
-        });
+        const matching = cachedResults.find((r) => r.metadata?.article === page);
         if (matching) {
           recordVectorHit(section ? "section" : "page");
           recordArticle(page);
@@ -908,7 +713,7 @@ _Cache hit - retrieved from local vector database_`;
         }
       }
     } catch (error) {
-      console.error("[fetchWikiPage] fetchWikiPage() cache lookup failed:", error.message);
+      console.error("[fetchWikiPage] cache lookup failed:", error.message);
     }
   }
   try {
@@ -969,13 +774,17 @@ ${markdown}`;
       reportFetchResult(page, section, content);
       return content;
     }
-    const leadText = extractLeadText(html);
+    const leadHtml = extractLeadHtml(html);
+    const $full = cheerio.load(html);
+    const referencesHtml = $full("ol.references").html() || "";
+    const combinedHtml = leadHtml.replace("</div>", `<ol class="references">${referencesHtml}</ol></div>`);
+    const leadMarkdown = htmlToMarkdown(combinedHtml, pageTitle);
     let result = `# ${pageTitle}
 **Source:** ${pageUrl}
 
 `;
     result += `## Overview
-${leadText}
+${leadMarkdown}
 
 `;
     result += `## Sections (${sectionsData.length})
@@ -1016,7 +825,7 @@ var fetchWikiPageTool = tool5(
 Parameters:
 - page (required): Wikipedia page title (e.g., "Mars")
 - section (optional): Section anchor (e.g., "Twin_rover", omit for overview)
-- limit (optional, default=3): Vector cache top-k
+- limit (optional, default=3): Vector cache top-k for semantic search
 - useCache (optional, default=true): Set to false to force web fetch
 
 Without section: returns overview + section list.

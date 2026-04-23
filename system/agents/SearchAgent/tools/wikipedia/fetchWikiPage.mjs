@@ -63,8 +63,8 @@ function reportFetchResult(page, section, content) {
 const wikiPageSchema = z.object({
   page: z.string().describe('Wikipedia page title (e.g., "Mars")'),
   section: z.string().optional().describe('Section anchor to fetch (e.g., "Formation", omit for overview)'),
-  limit: z.number().optional().default(3).describe('Number of results from vector cache (top-k)'),
-  // useCache: z.boolean().optional().default(true).describe('Whether to use vector cache for retrieval'),
+  limit: z.number().optional().default(3).describe('Vector cache top-k for semantic search'),
+  useCache: z.boolean().optional().default(true).describe('Whether to use vector cache for retrieval'),
 });
 
 /**
@@ -90,7 +90,7 @@ function decodeHtmlEntities(str) {
  * @param {string} pageTitle - Title of the Wikipedia page for resolving relative links
  * @returns {string} Processed Markdown
  */
-function htmlToMarkdown(html) {
+function htmlToMarkdown(html, pageTitle = "") {
   const $ = cheerio.load(html);
 
   // Setup turndown
@@ -107,7 +107,8 @@ function htmlToMarkdown(html) {
     const $el = $(el);
     const text = $el.text().trim().replace(/^\[\d+\]\s*/, "");
     if (text.includes("Cite error")) return;
-    const id = $el.attr("id") || "";
+    // Decode HTML entities in id (e.g., &#95; -> _)
+    const id = decodeHtmlEntities($el.attr("id") || "");
     const url = $el.find("a.external").attr("href") || "";
     citations.set(id, { index: idx++, text: text.slice(0, 150), url });
   });
@@ -120,9 +121,21 @@ function htmlToMarkdown(html) {
     const citeId = match && [...citations.keys()].find(k => k.includes(match[1]));
     const citation = citeId && citations.get(citeId);
     if (citation) {
-      $el.replaceWith(citation.url ? `[${citation.index}](${citation.url})` : `[${citation.index}]`);
+      if (citation.url) {
+        $el.replaceWith(`[${citation.index}](${citation.url})`);
+      } else {
+        // No external URL - link to Wikipedia citation anchor
+        const citeUrl = `https://en.wikipedia.org/wiki/${encodeURIComponent(pageTitle)}#${citeId}`;
+        $el.replaceWith(`[${citation.index}](${citeUrl})`);
+      }
     } else {
-      $el.replaceWith($el.text().replace(/[\[\]]/g, ""));
+      // Fallback: use bracket format to prevent text concatenation
+      const text = $el.text().replace(/[\[\]]/g, "").trim();
+      if (text) {
+        $el.replaceWith(`[${text}]`);
+      } else {
+        $el.remove();
+      }
     }
   });
 
@@ -144,63 +157,119 @@ function htmlToMarkdown(html) {
 
   return turndown.turndown($.html())
     .replace(/\\\[(\d+)\\\]/g, "[$1]")
-    // Fix Turndown escaping of parentheses in URLs
+    // Fix Turndown escaping of parentheses and underscores in URLs
     .replace(/\\\(/g, "(")
-    .replace(/\\\)/g, ")");
+    .replace(/\\\)/g, ")")
+    .replace(/\\_/g, "_");
 }
 
 /**
- * Extract lead paragraph text from HTML
- * Wikipedia returns full page HTML - we need to extract just the lead content
+ * Extract lead HTML from Wikipedia page content
+ * Extracts all content before the first h2 heading (the lead section)
  * @param {string} html - Raw HTML from Wikipedia API
- * @returns {string} Clean lead text
+ * @returns {string} HTML containing only the lead content
  */
-function extractLeadText(html) {
+function extractLeadHtml(html) {
   const $ = cheerio.load(html);
-  
-  // Remove non-content elements
-  $(".mw-editsection, .references, .printfooter, .catlinks, ol.references, .mw-references-wrap").remove();
-  
-  // Get text from first few paragraphs (lead section)
-  // Skip empty ones and accumulate until we have substantial text
-  let leadText = "";
-  $("p").each((i, el) => {
-    if (i >= 3) return false; // Only first 3 paragraphs
-    const text = $(el).text().trim();
-    if (text.length > 50) { // Skip short paragraphs
-      leadText += text + " ";
+
+  // Remove elements that should not be part of lead content
+  $(".shortdescription, .mw-empty-elt, figure, style, .mw-editsection").remove();
+
+  // Find the container with the actual content
+  const container = $(".mw-parser-output");
+  if (!container.length) {
+    return "";
+  }
+
+  // Collect all elements before the first h2
+  let leadHtml = "";
+  let reachedSection = false;
+
+  container.children().each((_, el) => {
+    const $el = $(el);
+
+    // Check if this element is or contains an h2 (first section heading)
+    if ($el.is("h2") || $el.find("h2").length > 0 || $el.is("meta[property='mw:PageProp/toc']")) {
+      reachedSection = true;
+      return false; // break - stop collecting
     }
+
+    // Don't include certain elements in lead
+    // Note: ol.references is kept for citation lookup in htmlToMarkdown()
+    if ($el.is(".references, .mw-references-wrap, .catlinks, .printfooter")) {
+      return; // continue
+    }
+
+    // Include this element's HTML
+    leadHtml += $.html(el) + "\n";
   });
-  
-  // Remove citation markers like [1], [2]
-  leadText = leadText.replace(/\[\d+\]/g, "");
-  
-  return leadText.replace(/\s+/g, " ").trim();
+
+  return `<div class="mw-parser-output">\n${leadHtml}</div>`;
+}
+
+/**
+ * Extract section HTML by section index
+ * @param {string} html - Full page HTML from Wikipedia API
+ * @param {number} sectionIndex - Section index to extract
+ * @returns {string} HTML containing only that section's content
+ */
+function extractSectionHtml(html, sectionIndex) {
+  const $ = cheerio.load(html);
+  const container = $(".mw-parser-output");
+
+  if (!container.length) {
+    return "";
+  }
+
+  const headings = [];
+  container.children("h2").each((i, el) => {
+    headings.push({ index: i, el: el, $el: $(el) });
+  });
+
+  // If sectionIndex is 0, it's the lead (already handled separately)
+  // Otherwise find the h2 at the section index
+  if (sectionIndex === 0) {
+    // Return everything before first h2
+    return extractLeadHtml(html);
+  }
+
+  // Find the target h2
+  const targetHeading = headings[sectionIndex - 1]; // -1 because h2 indices are 0-based after lead
+  if (!targetHeading) {
+    return "";
+  }
+
+  // Find the next h2 or end of content
+  const startIdx = container.children().index(targetHeading.el);
+  let endIdx = container.children().length;
+
+  if (headings[sectionIndex]) {
+    endIdx = container.children().index(headings[sectionIndex].el);
+  }
+
+  // Extract elements from start to end
+  let sectionHtml = "";
+  container.children().slice(startIdx, endIdx).each((_, el) => {
+    sectionHtml += $.html(el) + "\n";
+  });
+
+  return `<div class="mw-parser-output">\n${sectionHtml}</div>`;
 }
 
 /**
  * Fetch and parse Wikipedia page using MediaWiki API
  */
-async function fetchWikiPage({ page, section, limit = 3, useCache = false }) {
-  // Determine filter type based on whether section is provided
-  const filterType = section !== undefined ? "pageSection" : "pageOverview";
-  // Search query: use "page section" for semantic search
-  const searchQuery = section !== undefined ? `${page} ${section}` : page;
-
+async function fetchWikiPage({ page, section, limit = 3, useCache = true }) {
   // ==========================================================================
-  // Step 1: Check vector cache first if useCache is true
+  // Step 1: Check vector cache if useCache is true
   // ==========================================================================
   if (useCache) {
+    const filterType = section !== undefined ? "pageSection" : "pageOverview";
+    const searchQuery = section !== undefined ? `${page} ${section}` : page;
     try {
       const cachedResults = await searchVectorDB(searchQuery, limit, filterType);
-
       if (cachedResults && cachedResults.length > 0) {
-        // For pageSection, we searched with "page section" so semantic search did the work
-        // We just need to confirm the article matches
-        const matching = cachedResults.find((r) => {
-          return r.metadata?.article === page;
-        });
-
+        const matching = cachedResults.find((r) => r.metadata?.article === page);
         if (matching) {
           recordVectorHit(section ? "section" : "page");
           recordArticle(page);
@@ -210,13 +279,12 @@ async function fetchWikiPage({ page, section, limit = 3, useCache = false }) {
         }
       }
     } catch (error) {
-      // Cache lookup failed, continue to web fetch
-      console.error("[fetchWikiPage] fetchWikiPage() cache lookup failed:", error.message);
+      console.error("[fetchWikiPage] cache lookup failed:", error.message);
     }
   }
 
   // ==========================================================================
-  // Step 2: Cache miss - Fetch from Wikipedia API
+  // Step 2: Fetch from Wikipedia API
   // ==========================================================================
   try {
     const baseUrl = "https://en.wikipedia.org/w/api.php";
@@ -296,11 +364,22 @@ async function fetchWikiPage({ page, section, limit = 3, useCache = false }) {
     }
 
     // No section - get overview + section list
-    const leadText = extractLeadText(html);
+    // Extract lead HTML and convert to markdown for full content
+    const leadHtml = extractLeadHtml(html);
+
+    // Extract references section from full page HTML (needed for citation lookups)
+    // References are at the end, after all sections, so we need to include them
+    const $full = cheerio.load(html);
+    const referencesHtml = $full("ol.references").html() || "";
+
+    // Combine lead HTML with references for citation lookup
+    const combinedHtml = leadHtml.replace("</div>", `<ol class="references">${referencesHtml}</ol></div>`);
+
+    const leadMarkdown = htmlToMarkdown(combinedHtml, pageTitle);
 
     // Build result with overview and section list
     let result = `# ${pageTitle}\n**Source:** ${pageUrl}\n\n`;
-    result += `## Overview\n${leadText}\n\n`;
+    result += `## Overview\n${leadMarkdown}\n\n`;
     result += `## Sections (${sectionsData.length})\n`;
 
     if (sectionsData.length > 0) {
@@ -314,6 +393,7 @@ async function fetchWikiPage({ page, section, limit = 3, useCache = false }) {
     result += `\n---\n\n**Full section available - ask to fetch specific sections by anchor.**`;
 
     // Record web request and article, then store overview to vector DB (fire and forget)
+    // Store the formatted result with section list for complete context
     recordWebRequest("page");
     recordArticle(page);
     upsertWikiPage(page, "", result).catch((error) => {
@@ -342,7 +422,7 @@ export const fetchWikiPageTool = tool(
 Parameters:
 - page (required): Wikipedia page title (e.g., "Mars")
 - section (optional): Section anchor (e.g., "Twin_rover", omit for overview)
-- limit (optional, default=3): Vector cache top-k
+- limit (optional, default=3): Vector cache top-k for semantic search
 - useCache (optional, default=true): Set to false to force web fetch
 
 Without section: returns overview + section list.

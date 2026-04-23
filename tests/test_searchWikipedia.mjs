@@ -1,4 +1,4 @@
-import { searchWikipediaTool } from './system/agents/SearchAgent/tools/wikipedia/searchWikipedia.mjs';
+import { searchWikipediaTool } from '../system/agents/SearchAgent/tools/wikipedia/searchWikipedia.mjs';
 
 async function test() {
   console.log('Testing searchWikipedia...\n');
@@ -8,9 +8,9 @@ async function test() {
   const result1 = await searchWikipediaTool.invoke({ query: 'Why is there anything', limit: 3 });
   console.log(result1);
 
-  // Test 2: Title-only search
-  console.log('\n=== Test 2: Title Search ===\n');
-  const result2 = await searchWikipediaTool.invoke({ query: 'Mars rover', limit: 3, type: 'title' });
+  // Test 2: Nearmatch search
+  console.log('\n=== Test 2: Nearmatch Search ===\n');
+  const result2 = await searchWikipediaTool.invoke({ query: 'Eal', limit: 3, type: 'nearmatch' });
   console.log(result2);
 
   // Test 3: Exact phrase
