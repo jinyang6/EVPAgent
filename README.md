@@ -17,7 +17,7 @@ system/agents/
 │   └── types/
 │       └── chunk.mjs      # OpenAI-compatible chunk types
 ├── PromptComposerAgent/   # Creates dynamic_system_prompt.md
-├── SearchAgent/           # Web search pipeline
+├── MainAgent/            # Web search pipeline
 │   └── tools/
 │       ├── web/           # webSearchTool, webFetchTool
 │       ├── wikipedia/     # searchWikipedia, fetchWikiPage
@@ -26,7 +26,7 @@ system/agents/
 
 Pipeline Flow:
   compose (PromptComposerAgent)
-    → search (SearchAgent)
+    → search (MainAgent)
     → refine (PromptRefineAgent)
 ```
 

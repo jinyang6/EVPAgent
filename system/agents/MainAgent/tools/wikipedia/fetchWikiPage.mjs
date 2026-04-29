@@ -14,27 +14,14 @@ import {
   recordWebRequest,
   recordArticle,
 } from "../stats.mjs";
-
-/**
- * Get platform-aware prompts directory
- */
-function getPromptsDir() {
-  const homeDir = process.env.APPDATA || join(process.env.HOME || "", ".evpagent");
-  if (process.platform === 'win32') {
-    return join(process.env.APPDATA, "EVPAgent", "prompts", "dynamic_prompts");
-  } else if (process.platform === 'darwin') {
-    return join(homeDir, "Library", "Application Support", "EVPAgent", "prompts", "dynamic_prompts");
-  } else {
-    return join(homeDir, ".config", "evpagent", "prompts", "dynamic_prompts");
-  }
-}
+import { getUserPromptsDir } from "../../../utils/appDataPaths.mjs";
 
 /**
  * Report fetch result to session_manifest.json
  */
 function reportFetchResult(page, section, content) {
   try {
-    const promptsDir = getPromptsDir();
+    const promptsDir = getUserPromptsDir();
     const manifestPath = join(promptsDir, 'session_manifest.json');
     
     let manifest = { searchHistory: [], searchSuccess: false };
@@ -257,6 +244,40 @@ function extractSectionHtml(html, sectionIndex) {
 }
 
 /**
+ * Normalize title for comparison
+ * Handles underscores, URL encoding, punctuation differences
+ */
+function normalizeTitle(title) {
+  if (!title) return "";
+  return title.toLowerCase()
+    .replace(/_/g, " ")
+    .replace(/%([a-f0-9]{2})/gi, (_, p) => String.fromCharCode(parseInt(p, 16)))
+    .replace(/[?!.,;:]/g, "")
+    .trim();
+}
+
+/**
+ * Calculate similarity between two strings (0-1)
+ * Uses word-based Jaccard similarity
+ */
+function titleSimilarity(a, b) {
+  if (!a && !b) return 1; // both empty = match
+  if (!a || !b) return 0;  // one empty = no match
+  const wordsA = new Set(a.split(/\s+/));
+  const wordsB = new Set(b.split(/\s+/));
+  const intersection = new Set([...wordsA].filter(x => wordsB.has(x)));
+  const union = new Set([...wordsA, ...wordsB]);
+  return intersection.size / union.size;
+}
+
+/**
+ * Check if titles match with similarity threshold
+ */
+function titlesMatch(title1, title2, threshold = 0.8) {
+  return titleSimilarity(normalizeTitle(title1), normalizeTitle(title2)) >= threshold;
+}
+
+/**
  * Fetch and parse Wikipedia page using MediaWiki API
  */
 async function fetchWikiPage({ page, section, limit = 3, useCache = true }) {
@@ -269,7 +290,11 @@ async function fetchWikiPage({ page, section, limit = 3, useCache = true }) {
     try {
       const cachedResults = await searchVectorDB(searchQuery, limit, filterType);
       if (cachedResults && cachedResults.length > 0) {
-        const matching = cachedResults.find((r) => r.metadata?.article === page);
+        // Match: article and section must match (using similarity)
+        const matching = cachedResults.find((r) =>
+          titlesMatch(r.metadata?.article, page) &&
+          titlesMatch(r.metadata?.section, section)
+        );
         if (matching) {
           recordVectorHit(section ? "section" : "page");
           recordArticle(page);

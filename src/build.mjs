@@ -27,19 +27,32 @@ if (!existsSync(distPromptsDir)) {
 writeFileSync(join(distDir, 'version.json'), JSON.stringify({ version: VERSION }), 'utf-8');
 console.log(`Version: ${VERSION}`);
 
-// Copy config files to dist/prompts/config/
-const configFiles = [
-  'system_prompt.md',
-  'Rephrase.md',
-  'Loop.md',
-];
-
-for (const file of configFiles) {
-  const src = join(systemPromptsDir, 'config', file);
-  const dest = join(distConfigDir, file);
+// Copy config files from rover/ and probe/ to dist/prompts/config/
+// rover files
+const roverFiles = ['rover_system_prompt.md', 'Loop.md', 'Rephrase.md'];
+const roverSrc = join(systemPromptsDir, 'config', 'rover');
+const roverDest = join(distConfigDir, 'rover');
+if (!existsSync(roverDest)) mkdirSync(roverDest, { recursive: true });
+for (const file of roverFiles) {
+  const src = join(roverSrc, file);
+  const dest = join(roverDest, file);
   if (existsSync(src)) {
     cpSync(src, dest);
-    console.log(`Copied: ${file}`);
+    console.log(`Copied: rover/${file}`);
+  }
+}
+
+// probe files
+const probeFiles = ['probe_system_prompt.md'];
+const probeSrc = join(systemPromptsDir, 'config', 'probe');
+const probeDest = join(distConfigDir, 'probe');
+if (!existsSync(probeDest)) mkdirSync(probeDest, { recursive: true });
+for (const file of probeFiles) {
+  const src = join(probeSrc, file);
+  const dest = join(probeDest, file);
+  if (existsSync(src)) {
+    cpSync(src, dest);
+    console.log(`Copied: probe/${file}`);
   }
 }
 

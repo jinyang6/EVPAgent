@@ -3,7 +3,7 @@ import {
   formatCachedSearchResults,
   getTable,
   getEmbeddings,
-} from "../system/agents/SearchAgent/tools/vector/vectorHelpers.mjs";
+} from "../system/agents/MainAgent/tools/vector/vectorHelpers.mjs";
 
 console.log("Starting test...");
 

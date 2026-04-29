@@ -42,30 +42,45 @@ import { ToolNode } from "@langchain/langgraph/prebuilt";
 // system/agents/PromptComposerAgent/tools/read/readSystemPrompt.mjs
 import { tool } from "@langchain/core/tools";
 import { readFileSync, existsSync } from "fs";
-import { join } from "path";
+import { join as join2 } from "path";
 import z from "zod";
-function getConfigDir() {
-  const homeDir = process.env.APPDATA || join(process.env.HOME || "", ".evpagent");
+
+// system/agents/utils/appDataPaths.mjs
+import { join } from "path";
+import { homedir } from "os";
+function getBaseDir() {
+  const homeDir = homedir();
   if (process.platform === "win32") {
-    return join(process.env.APPDATA, "EVPAgent", "prompts", "config");
-  } else if (process.platform === "darwin") {
-    return join(homeDir, "Library", "Application Support", "EVPAgent", "prompts", "config");
-  } else {
-    return join(homeDir, ".config", "evpagent", "prompts", "config");
+    return process.env.APPDATA || join(homeDir, ".evpagent");
   }
+  if (process.platform === "darwin") {
+    return join(homeDir, "Library", "Application Support");
+  }
+  return process.env.XDG_CONFIG_HOME || join(homeDir, ".config");
 }
+function getUserPromptsDir() {
+  return join(getBaseDir(), "EVPAgent", "prompts", "dynamic_prompts");
+}
+function getUserConfigDir() {
+  return join(getBaseDir(), "EVPAgent", "prompts", "config");
+}
+function getOutputDir() {
+  return join(getBaseDir(), "EVPAgent", "output");
+}
+
+// system/agents/PromptComposerAgent/tools/read/readSystemPrompt.mjs
 var readSystemPromptTool = tool(
   async () => {
-    const configDir = getConfigDir();
-    const systemPromptPath = join(configDir, "system_prompt.md");
+    const configDir = getUserConfigDir();
+    const systemPromptPath = join2(configDir, "rover", "rover_system_prompt.md");
     if (!existsSync(systemPromptPath)) {
-      return "Error: system_prompt.md not found in config directory";
+      return "Error: rover_system_prompt.md not found in config directory";
     }
     return readFileSync(systemPromptPath, "utf-8");
   },
   {
     name: "readSystemPrompt",
-    description: "Read the base system prompt template. Returns the full content of the system_prompt.md file which contains ${Rephrase} and ${Loop} placeholders.",
+    description: "Read the rover system prompt template (rover_system_prompt.md). Returns the full content which contains ${Rephrase} and ${Loop} placeholders.",
     schema: z.object({})
   }
 );
@@ -73,28 +88,18 @@ var readSystemPromptTool = tool(
 // system/agents/PromptComposerAgent/tools/list/listPromptFiles.mjs
 import { tool as tool2 } from "@langchain/core/tools";
 import { readFileSync as readFileSync2, readdirSync, existsSync as existsSync2 } from "fs";
-import { join as join2 } from "path";
+import { join as join3 } from "path";
 import z2 from "zod";
-function getPromptsDir() {
-  const homeDir = process.env.APPDATA || join2(process.env.HOME || "", ".evpagent");
-  if (process.platform === "win32") {
-    return join2(process.env.APPDATA, "EVPAgent", "prompts", "dynamic_prompts");
-  } else if (process.platform === "darwin") {
-    return join2(homeDir, "Library", "Application Support", "EVPAgent", "prompts", "dynamic_prompts");
-  } else {
-    return join2(homeDir, ".config", "evpagent", "prompts", "dynamic_prompts");
-  }
-}
 var listPromptFilesTool = tool2(
   async () => {
-    const promptsDir = getPromptsDir();
+    const promptsDir = getUserPromptsDir();
     const allFiles = [];
     for (const folder of ["Rephrase", "Loop"]) {
-      const folderPath = join2(promptsDir, folder);
+      const folderPath = join3(promptsDir, folder);
       if (!existsSync2(folderPath)) continue;
       const files = readdirSync(folderPath).filter((f) => f.endsWith(".json")).map((f) => {
         try {
-          const content = readFileSync2(join2(folderPath, f), "utf-8");
+          const content = readFileSync2(join3(folderPath, f), "utf-8");
           const parsed = JSON.parse(content);
           return {
             section: folder,
@@ -119,39 +124,19 @@ var listPromptFilesTool = tool2(
 // system/agents/PromptComposerAgent/tools/combine/combinePrompts.mjs
 import { tool as tool3 } from "@langchain/core/tools";
 import { readFileSync as readFileSync3, existsSync as existsSync3, writeFileSync } from "fs";
-import { join as join3 } from "path";
+import { join as join4 } from "path";
 import z3 from "zod";
-function getPromptsDir2() {
-  const homeDir = process.env.APPDATA || join3(process.env.HOME || "", ".evpagent");
-  if (process.platform === "win32") {
-    return join3(process.env.APPDATA, "EVPAgent", "prompts", "dynamic_prompts");
-  } else if (process.platform === "darwin") {
-    return join3(homeDir, "Library", "Application Support", "EVPAgent", "prompts", "dynamic_prompts");
-  } else {
-    return join3(homeDir, ".config", "evpagent", "prompts", "dynamic_prompts");
-  }
-}
-function getConfigDir2() {
-  const homeDir = process.env.APPDATA || join3(process.env.HOME || "", ".evpagent");
-  if (process.platform === "win32") {
-    return join3(process.env.APPDATA, "EVPAgent", "prompts", "config");
-  } else if (process.platform === "darwin") {
-    return join3(homeDir, "Library", "Application Support", "EVPAgent", "prompts", "config");
-  } else {
-    return join3(homeDir, ".config", "evpagent", "prompts", "config");
-  }
-}
 var combinePromptsTool = tool3(
   async ({ prompts, userQuery }) => {
-    const promptsDir = getPromptsDir2();
-    const configDir = getConfigDir2();
-    const systemPromptPath = join3(configDir, "system_prompt.md");
+    const promptsDir = getUserPromptsDir();
+    const configDir = getUserConfigDir();
+    const systemPromptPath = join4(configDir, "rover", "rover_system_prompt.md");
     if (!existsSync3(systemPromptPath)) {
-      return "Error: system_prompt.md not found";
+      return "Error: rover_system_prompt.md not found";
     }
     let systemPrompt = readFileSync3(systemPromptPath, "utf-8");
     for (const p of prompts) {
-      const filePath = join3(promptsDir, p.section, `${p.promptName}.json`);
+      const filePath = join4(promptsDir, p.section, `${p.promptName}.json`);
       if (existsSync3(filePath)) {
         const content = readFileSync3(filePath, "utf-8");
         const parsed = JSON.parse(content);
@@ -159,7 +144,7 @@ var combinePromptsTool = tool3(
         systemPrompt = systemPrompt.replace(placeholder, parsed.content || "");
       }
     }
-    const dynamicPromptPath = join3(promptsDir, "dynamic_system_prompt.md");
+    const dynamicPromptPath = join4(promptsDir, "dynamic_system_prompt.md");
     writeFileSync(dynamicPromptPath, systemPrompt, "utf-8");
     const manifest = {
       userQuery,
@@ -167,7 +152,7 @@ var combinePromptsTool = tool3(
       searchHistory: [],
       timestamp: (/* @__PURE__ */ new Date()).toISOString()
     };
-    const manifestPath = join3(promptsDir, "session_manifest.json");
+    const manifestPath = join4(promptsDir, "session_manifest.json");
     writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), "utf-8");
     return `Combined ${prompts.length} prompts. Written to dynamic_system_prompt.md and session_manifest.json`;
   },
@@ -259,17 +244,126 @@ import path2 from "node:path";
 import { ToolNode as ToolNode2 } from "@langchain/langgraph/prebuilt";
 
 // system/agents/SearchAgent/tools/wikipedia/searchWikipedia.mjs
-import axios2 from "axios";
+import axios from "axios";
 import { tool as tool4 } from "@langchain/core/tools";
 import z4 from "zod";
 import { readFileSync as readFileSync4, existsSync as existsSync4, writeFileSync as writeFileSync2 } from "fs";
-import { join as join4 } from "path";
+import { join as join5 } from "path";
+function reportSearchResult(query, results) {
+  try {
+    const promptsDir = getUserPromptsDir();
+    const manifestPath = join5(promptsDir, "session_manifest.json");
+    let manifest = { searchHistory: [], searchSuccess: false };
+    if (existsSync4(manifestPath)) {
+      try {
+        const content = readFileSync4(manifestPath, "utf-8").trim();
+        if (content) {
+          manifest = JSON.parse(content);
+        }
+      } catch {
+      }
+    }
+    if (!manifest.searchHistory) manifest.searchHistory = [];
+    manifest.searchHistory.push({
+      tool: "searchWikipedia",
+      arguments: { query, limit: 5 },
+      result: results.slice(0, 1e3),
+      timestamp: (/* @__PURE__ */ new Date()).toISOString()
+    });
+    writeFileSync2(manifestPath, JSON.stringify(manifest, null, 2), "utf-8");
+  } catch (error) {
+    console.error("[searchWikipedia] reportSearchResult() failed:", error.message);
+  }
+}
+var wikipediaSearchSchema = z4.object({
+  query: z4.string().describe("The search query to find relevant Wikipedia articles"),
+  limit: z4.number().optional().default(5).describe("Number of results: 3 for simple facts, 5 for default, 10+ for comprehensive research"),
+  type: z4.enum(["text", "nearmatch"]).optional().default("text").describe("Type of search: text (full text) or nearmatch")
+});
+async function wikipediaSearch({ query, limit = 5, type = "text" }) {
+  const params = new URLSearchParams({
+    action: "query",
+    list: "search",
+    srsearch: query,
+    srnamespace: "0",
+    srlimit: String(limit),
+    srwhat: type,
+    srprop: "size|wordcount|timestamp|snippet|titlesnippet",
+    format: "json",
+    utf8: "1"
+  });
+  const url = `http://en.wikipedia.org/w/api.php?${params.toString()}`;
+  try {
+    const response = await axios.get(url, {
+      headers: {
+        "User-Agent": "EVPAgent/1.0 (https://github.com/jinyang6/EVPAgent; jiatom519@gmail.com)"
+      },
+      timeout: 15e3
+    });
+    const queryData = response.data?.query;
+    if (!queryData?.search || queryData.search.length === 0) {
+      return `Wikipedia search for "${query}" returned no results.`;
+    }
+    const searchInfo = queryData.searchinfo || {};
+    const totalHits = searchInfo.totalhits || queryData.search.length;
+    let output = `Wikipedia Search Results for "${query}":
+
+`;
+    queryData.search.forEach((item, index) => {
+      const articleUrl = `https://en.wikipedia.org/wiki/${encodeURIComponent(item.title.replace(/ /g, "_"))}`;
+      const snippet = item.snippet?.replace(/<[^>]*>/g, "") || "No preview available";
+      output += `[${index + 1}] ${item.title}
+`;
+      output += `${articleUrl}
+`;
+      output += `${snippet}
+
+`;
+    });
+    reportSearchResult(query, output);
+    return output.trim();
+  } catch (error) {
+    if (error.response?.status === 429) {
+      return `Wikipedia search rate limited. Please wait and try again.`;
+    }
+    return `Wikipedia search for "${query}" failed: ${error.message}`;
+  }
+}
+var searchWikipediaTool = tool4(
+  wikipediaSearch,
+  {
+    name: "searchWikipedia",
+    description: `Search Wikipedia for articles using MediaWiki Action API.
+
+Parameters:
+- query (required): Search query - supports advanced operators:
+  - "exact phrase" for exact match
+  - AND / OR / NOT for boolean logic (e.g., "Mars AND ocean NOT atmosphere")
+  - intitle: for title-only search (e.g., intitle:"Curiosity rover")
+  - insource: for article text search (e.g., insource:"olivine" "water")
+  - incategory: for category search (e.g., incategory:"Space exploration")
+- limit (optional, default=5): Number of results (3=facts, 5=default, 10+=research)
+- type (optional): 'text' or 'nearmatch'
+
+Returns: Page titles, URLs, snippets.`,
+    schema: wikipediaSearchSchema
+  }
+);
+
+// system/agents/SearchAgent/tools/wikipedia/fetchWikiPage.mjs
+import axios3 from "axios";
+import { tool as tool5 } from "@langchain/core/tools";
+import z5 from "zod";
+import * as cheerio from "cheerio";
+import TurndownService from "turndown";
+import { readFileSync as readFileSync5, existsSync as existsSync5, writeFileSync as writeFileSync3 } from "fs";
+import { join as join6 } from "path";
 
 // system/agents/SearchAgent/tools/vector/vectorHelpers.mjs
 import path from "node:path";
 import os from "node:os";
 import { createHash } from "node:crypto";
-import axios from "axios";
+import axios2 from "axios";
 import { connect } from "@lancedb/lancedb";
 import { OpenAIEmbeddings } from "@langchain/openai";
 var TABLE_NAME = "evpagent_wikipedia";
@@ -325,9 +419,9 @@ async function getTable() {
   return table;
 }
 async function resetVectorDB() {
-  const { rmSync, existsSync: existsSync15 } = await import("fs");
+  const { rmSync, existsSync: existsSync16 } = await import("fs");
   const dbPath = getVectorDBPath();
-  if (existsSync15(dbPath)) {
+  if (existsSync16(dbPath)) {
     rmSync(dbPath, { recursive: true, force: true });
   }
   db = null;
@@ -349,7 +443,7 @@ async function getLastEditedTime(pageTitle) {
       utf8: "1"
     });
     const url = `https://en.wikipedia.org/w/api.php?${params.toString()}`;
-    const response = await axios.get(url, {
+    const response = await axios2.get(url, {
       headers: { "User-Agent": USER_AGENT },
       timeout: 1e4
     });
@@ -450,146 +544,11 @@ function resetResponseStats() {
   stats.webRequests = 0;
 }
 
-// system/agents/SearchAgent/tools/wikipedia/searchWikipedia.mjs
-function getPromptsDir3() {
-  const homeDir = process.env.APPDATA || join4(process.env.HOME || "", ".evpagent");
-  if (process.platform === "win32") {
-    return join4(process.env.APPDATA, "EVPAgent", "prompts", "dynamic_prompts");
-  } else if (process.platform === "darwin") {
-    return join4(homeDir, "Library", "Application Support", "EVPAgent", "prompts", "dynamic_prompts");
-  } else {
-    return join4(homeDir, ".config", "evpagent", "prompts", "dynamic_prompts");
-  }
-}
-function reportSearchResult(query, results) {
-  try {
-    const promptsDir = getPromptsDir3();
-    const manifestPath = join4(promptsDir, "session_manifest.json");
-    let manifest = { searchHistory: [], searchSuccess: false };
-    if (existsSync4(manifestPath)) {
-      try {
-        const content = readFileSync4(manifestPath, "utf-8").trim();
-        if (content) {
-          manifest = JSON.parse(content);
-        }
-      } catch {
-      }
-    }
-    if (!manifest.searchHistory) manifest.searchHistory = [];
-    manifest.searchHistory.push({
-      tool: "searchWikipedia",
-      arguments: { query, limit: 5 },
-      result: results.slice(0, 1e3),
-      timestamp: (/* @__PURE__ */ new Date()).toISOString()
-    });
-    writeFileSync2(manifestPath, JSON.stringify(manifest, null, 2), "utf-8");
-  } catch (error) {
-    console.error("[searchWikipedia] reportSearchResult() failed:", error.message);
-  }
-}
-var wikipediaSearchSchema = z4.object({
-  query: z4.string().describe("The search query to find relevant Wikipedia articles"),
-  limit: z4.number().optional().default(5).describe("Number of results: 3 for simple facts, 5 for default, 10+ for comprehensive research"),
-  type: z4.enum(["text", "nearmatch"]).optional().default("text").describe("Type of search: text (full text) or nearmatch")
-  // useCache: z.boolean().optional().default(true).describe('Whether to use vector cache for retrieval'),
-});
-async function wikipediaSearch({
-  query,
-  limit = 5,
-  type = "text"
-  /*, useCache = true */
-}) {
-  const params = new URLSearchParams({
-    action: "query",
-    list: "search",
-    srsearch: query,
-    srnamespace: "0",
-    srlimit: String(limit),
-    srwhat: type,
-    srprop: "size|wordcount|timestamp|snippet|titlesnippet",
-    format: "json",
-    utf8: "1"
-  });
-  const url = `http://en.wikipedia.org/w/api.php?${params.toString()}`;
-  try {
-    const response = await axios2.get(url, {
-      headers: {
-        "User-Agent": "EVPAgent/1.0 (https://github.com/jinyang6/EVPAgent; jiatom519@gmail.com)"
-      },
-      timeout: 15e3
-    });
-    const queryData = response.data?.query;
-    if (!queryData?.search || queryData.search.length === 0) {
-      return `Wikipedia search for "${query}" returned no results.`;
-    }
-    const searchInfo = queryData.searchinfo || {};
-    const totalHits = searchInfo.totalhits || queryData.search.length;
-    let output = `Wikipedia Search Results for "${query}":
-
-`;
-    queryData.search.forEach((item, index) => {
-      const articleUrl = `https://en.wikipedia.org/wiki/${encodeURIComponent(item.title.replace(/ /g, "_"))}`;
-      const snippet = item.snippet?.replace(/<[^>]*>/g, "") || "No preview available";
-      output += `[${index + 1}] ${item.title}
-`;
-      output += `${articleUrl}
-`;
-      output += `${snippet}
-
-`;
-    });
-    reportSearchResult(query, output);
-    return output.trim();
-  } catch (error) {
-    if (error.response?.status === 429) {
-      return `Wikipedia search rate limited. Please wait and try again.`;
-    }
-    return `Wikipedia search for "${query}" failed: ${error.message}`;
-  }
-}
-var searchWikipediaTool = tool4(
-  wikipediaSearch,
-  {
-    name: "searchWikipedia",
-    description: `Search Wikipedia for articles using MediaWiki Action API.
-
-Parameters:
-- query (required): Search query - supports advanced operators:
-  - "exact phrase" for exact match
-  - AND / OR / NOT for boolean logic (e.g., "Mars AND ocean NOT atmosphere")
-  - intitle: for title-only search (e.g., intitle:"Curiosity rover")
-  - insource: for article text search (e.g., insource:"olivine" "water")
-  - incategory: for category search (e.g., incategory:"Space exploration")
-- limit (optional, default=5): Number of results (3=facts, 5=default, 10+=research)
-- type (optional): 'text' or 'nearmatch'
-
-Returns: Page titles, URLs, snippets.`,
-    schema: wikipediaSearchSchema
-  }
-);
-
 // system/agents/SearchAgent/tools/wikipedia/fetchWikiPage.mjs
-import axios3 from "axios";
-import { tool as tool5 } from "@langchain/core/tools";
-import z5 from "zod";
-import * as cheerio from "cheerio";
-import TurndownService from "turndown";
-import { readFileSync as readFileSync5, existsSync as existsSync5, writeFileSync as writeFileSync3 } from "fs";
-import { join as join5 } from "path";
-function getPromptsDir4() {
-  const homeDir = process.env.APPDATA || join5(process.env.HOME || "", ".evpagent");
-  if (process.platform === "win32") {
-    return join5(process.env.APPDATA, "EVPAgent", "prompts", "dynamic_prompts");
-  } else if (process.platform === "darwin") {
-    return join5(homeDir, "Library", "Application Support", "EVPAgent", "prompts", "dynamic_prompts");
-  } else {
-    return join5(homeDir, ".config", "evpagent", "prompts", "dynamic_prompts");
-  }
-}
 function reportFetchResult(page, section, content) {
   try {
-    const promptsDir = getPromptsDir4();
-    const manifestPath = join5(promptsDir, "session_manifest.json");
+    const promptsDir = getUserPromptsDir();
+    const manifestPath = join6(promptsDir, "session_manifest.json");
     let manifest = { searchHistory: [], searchSuccess: false };
     if (existsSync5(manifestPath)) {
       manifest = JSON.parse(readFileSync5(manifestPath, "utf-8"));
@@ -692,6 +651,22 @@ function extractLeadHtml(html) {
   return `<div class="mw-parser-output">
 ${leadHtml}</div>`;
 }
+function normalizeTitle(title) {
+  if (!title) return "";
+  return title.toLowerCase().replace(/_/g, " ").replace(/%([a-f0-9]{2})/gi, (_, p) => String.fromCharCode(parseInt(p, 16))).replace(/[?!.,;:]/g, "").trim();
+}
+function titleSimilarity(a, b) {
+  if (!a && !b) return 1;
+  if (!a || !b) return 0;
+  const wordsA = new Set(a.split(/\s+/));
+  const wordsB = new Set(b.split(/\s+/));
+  const intersection = new Set([...wordsA].filter((x) => wordsB.has(x)));
+  const union = /* @__PURE__ */ new Set([...wordsA, ...wordsB]);
+  return intersection.size / union.size;
+}
+function titlesMatch(title1, title2, threshold = 0.8) {
+  return titleSimilarity(normalizeTitle(title1), normalizeTitle(title2)) >= threshold;
+}
 async function fetchWikiPage({ page, section, limit = 3, useCache = true }) {
   if (useCache) {
     const filterType = section !== void 0 ? "pageSection" : "pageOverview";
@@ -699,7 +674,9 @@ async function fetchWikiPage({ page, section, limit = 3, useCache = true }) {
     try {
       const cachedResults = await searchVectorDB(searchQuery, limit, filterType);
       if (cachedResults && cachedResults.length > 0) {
-        const matching = cachedResults.find((r) => r.metadata?.article === page);
+        const matching = cachedResults.find(
+          (r) => titlesMatch(r.metadata?.article, page) && titlesMatch(r.metadata?.section, section)
+        );
         if (matching) {
           recordVectorHit(section ? "section" : "page");
           recordArticle(page);
@@ -838,35 +815,15 @@ With section: returns full section content in Markdown.
 // system/agents/SearchAgent/tools/postprocess/reportTool.mjs
 import { tool as tool6 } from "@langchain/core/tools";
 import { readFileSync as readFileSync6, existsSync as existsSync6, writeFileSync as writeFileSync4, mkdirSync } from "fs";
-import { join as join6 } from "path";
+import { join as join7 } from "path";
 import z6 from "zod";
-function getPromptsDir5() {
-  const homeDir = process.env.APPDATA || join6(process.env.HOME || "", ".evpagent");
-  if (process.platform === "win32") {
-    return join6(process.env.APPDATA, "EVPAgent", "prompts", "dynamic_prompts");
-  } else if (process.platform === "darwin") {
-    return join6(homeDir, "Library", "Application Support", "EVPAgent", "prompts", "dynamic_prompts");
-  } else {
-    return join6(homeDir, ".config", "evpagent", "prompts", "dynamic_prompts");
-  }
-}
-function getOutputDir() {
-  const homeDir = process.env.APPDATA || join6(process.env.HOME || "", ".evpagent");
-  if (process.platform === "win32") {
-    return join6(process.env.APPDATA, "EVPAgent", "output");
-  } else if (process.platform === "darwin") {
-    return join6(homeDir, "Library", "Application Support", "EVPAgent", "output");
-  } else {
-    return join6(homeDir, ".config", "evpagent", "output");
-  }
-}
 function getOutputFile() {
-  return join6(getOutputDir(), "output.md");
+  return join7(getOutputDir(), "output.md");
 }
 var reportTool = tool6(
   async ({ searchSuccess, response }) => {
-    const promptsDir = getPromptsDir5();
-    const manifestPath = join6(promptsDir, "session_manifest.json");
+    const promptsDir = getUserPromptsDir();
+    const manifestPath = join7(promptsDir, "session_manifest.json");
     if (response) {
       const outputDir = getOutputDir();
       const outputFile = getOutputFile();
@@ -952,22 +909,12 @@ import { ToolNode as ToolNode3 } from "@langchain/langgraph/prebuilt";
 // system/agents/PromptRefineAgent/tools/read/readSessionManifest.mjs
 import { tool as tool7 } from "@langchain/core/tools";
 import { readFileSync as readFileSync7, existsSync as existsSync7 } from "fs";
-import { join as join7 } from "path";
+import { join as join8 } from "path";
 import z7 from "zod";
-function getPromptsDir6() {
-  const homeDir = process.env.APPDATA || join7(process.env.HOME || "", ".evpagent");
-  if (process.platform === "win32") {
-    return join7(process.env.APPDATA, "EVPAgent", "prompts", "dynamic_prompts");
-  } else if (process.platform === "darwin") {
-    return join7(homeDir, "Library", "Application Support", "EVPAgent", "prompts", "dynamic_prompts");
-  } else {
-    return join7(homeDir, ".config", "evpagent", "prompts", "dynamic_prompts");
-  }
-}
 var readSessionManifestTool = tool7(
   async () => {
-    const promptsDir = getPromptsDir6();
-    const manifestPath = join7(promptsDir, "session_manifest.json");
+    const promptsDir = getUserPromptsDir();
+    const manifestPath = join8(promptsDir, "session_manifest.json");
     if (!existsSync7(manifestPath)) {
       return JSON.stringify({ error: "session_manifest.json not found" });
     }
@@ -983,33 +930,20 @@ var readSessionManifestTool = tool7(
 // system/agents/PromptRefineAgent/tools/read/readSystemPrompt.mjs
 import { tool as tool8 } from "@langchain/core/tools";
 import { readFileSync as readFileSync8, existsSync as existsSync8 } from "fs";
-import { join as join8 } from "path";
+import { join as join9 } from "path";
 import z8 from "zod";
-function getConfigDir3() {
-  if (process.platform === "win32") {
-    return join8(process.env.APPDATA, "EVPAgent", "prompts", "config");
-  } else if (process.platform === "darwin") {
-    return join8(process.env.HOME, "Library", "Application Support", "EVPAgent", "prompts", "config");
-  } else {
-    return join8(process.env.HOME, ".config", "evpagent", "prompts", "config");
-  }
-}
 var readSystemPromptTool2 = tool8(
   async ({}) => {
-    const configDir = getConfigDir3();
-    const filePath = join8(configDir, "system_prompt.md");
+    const configDir = getUserConfigDir();
+    const filePath = join9(configDir, "rover", "rover_system_prompt.md");
     if (!existsSync8(filePath)) {
-      const sourcePath = join8(process.cwd(), "system", "prompts", "config", "system_prompt.md");
-      if (existsSync8(sourcePath)) {
-        return readFileSync8(sourcePath, "utf-8");
-      }
       return JSON.stringify({ error: `System prompt not found at ${filePath}` });
     }
     return readFileSync8(filePath, "utf-8");
   },
   {
     name: "readSystemPrompt",
-    description: "Read the main system prompt (system_prompt.md) content. This is the primary prompt that guides search behavior.",
+    description: "Read the main system prompt (rover_system_prompt.md) content. This is the primary prompt that guides rover mode search behavior.",
     schema: z8.object({})
   }
 );
@@ -1017,28 +951,18 @@ var readSystemPromptTool2 = tool8(
 // system/agents/PromptRefineAgent/tools/list/listPromptFiles.mjs
 import { tool as tool9 } from "@langchain/core/tools";
 import { readFileSync as readFileSync9, readdirSync as readdirSync2, existsSync as existsSync9 } from "fs";
-import { join as join9 } from "path";
+import { join as join10 } from "path";
 import z9 from "zod";
-function getPromptsDir7() {
-  const homeDir = process.env.APPDATA || join9(process.env.HOME || "", ".evpagent");
-  if (process.platform === "win32") {
-    return join9(process.env.APPDATA, "EVPAgent", "prompts", "dynamic_prompts");
-  } else if (process.platform === "darwin") {
-    return join9(homeDir, "Library", "Application Support", "EVPAgent", "prompts", "dynamic_prompts");
-  } else {
-    return join9(homeDir, ".config", "evpagent", "prompts", "dynamic_prompts");
-  }
-}
 var listPromptFilesTool2 = tool9(
   async ({ folder }) => {
-    const promptsDir = getPromptsDir7();
-    const folderPath = join9(promptsDir, folder);
+    const promptsDir = getUserPromptsDir();
+    const folderPath = join10(promptsDir, folder);
     if (!existsSync9(folderPath)) {
       return JSON.stringify([]);
     }
     const files = readdirSync2(folderPath).filter((f) => f.endsWith(".json")).map((f) => {
       try {
-        const content = readFileSync9(join9(folderPath, f), "utf-8");
+        const content = readFileSync9(join10(folderPath, f), "utf-8");
         const parsed = JSON.parse(content);
         return {
           name: parsed.name || f.replace(".json", ""),
@@ -1062,22 +986,12 @@ var listPromptFilesTool2 = tool9(
 // system/agents/PromptRefineAgent/tools/read/readPrompt.mjs
 import { tool as tool10 } from "@langchain/core/tools";
 import { readFileSync as readFileSync10, existsSync as existsSync10 } from "fs";
-import { join as join10 } from "path";
+import { join as join11 } from "path";
 import z10 from "zod";
-function getPromptsDir8() {
-  const homeDir = process.env.APPDATA || join10(process.env.HOME || "", ".evpagent");
-  if (process.platform === "win32") {
-    return join10(process.env.APPDATA, "EVPAgent", "prompts", "dynamic_prompts");
-  } else if (process.platform === "darwin") {
-    return join10(homeDir, "Library", "Application Support", "EVPAgent", "prompts", "dynamic_prompts");
-  } else {
-    return join10(homeDir, ".config", "evpagent", "prompts", "dynamic_prompts");
-  }
-}
 var readPromptTool = tool10(
   async ({ prompt }) => {
-    const promptsDir = getPromptsDir8();
-    const filePath = join10(promptsDir, prompt.section, `${prompt.promptName}.json`);
+    const promptsDir = getUserPromptsDir();
+    const filePath = join11(promptsDir, prompt.section, `${prompt.promptName}.json`);
     if (!existsSync10(filePath)) {
       return JSON.stringify({ error: `Prompt ${prompt.promptName} not found in ${prompt.section}` });
     }
@@ -1098,26 +1012,16 @@ var readPromptTool = tool10(
 // system/agents/PromptRefineAgent/tools/write/writePrompt.mjs
 import { tool as tool11 } from "@langchain/core/tools";
 import { readFileSync as readFileSync11, existsSync as existsSync11, writeFileSync as writeFileSync5 } from "fs";
-import { join as join11 } from "path";
+import { join as join12 } from "path";
 import z11 from "zod";
-function getPromptsDir9() {
-  const homeDir = process.env.APPDATA || join11(process.env.HOME || "", ".evpagent");
-  if (process.platform === "win32") {
-    return join11(process.env.APPDATA, "EVPAgent", "prompts", "dynamic_prompts");
-  } else if (process.platform === "darwin") {
-    return join11(homeDir, "Library", "Application Support", "EVPAgent", "prompts", "dynamic_prompts");
-  } else {
-    return join11(homeDir, ".config", "evpagent", "prompts", "dynamic_prompts");
-  }
-}
 var writePromptTool = tool11(
   async ({ prompt }) => {
-    const promptsDir = getPromptsDir9();
-    const folderPath = join11(promptsDir, prompt.section);
+    const promptsDir = getUserPromptsDir();
+    const folderPath = join12(promptsDir, prompt.section);
     if (!existsSync11(folderPath)) {
       return JSON.stringify({ error: `Folder ${prompt.section} does not exist` });
     }
-    const filePath = join11(folderPath, `${prompt.promptName}.json`);
+    const filePath = join12(folderPath, `${prompt.promptName}.json`);
     const promptData = {
       name: prompt.promptName,
       description: prompt.description,
@@ -1143,22 +1047,12 @@ var writePromptTool = tool11(
 // system/agents/PromptRefineAgent/tools/delete/deletePrompt.mjs
 import { tool as tool12 } from "@langchain/core/tools";
 import { readFileSync as readFileSync12, existsSync as existsSync12, unlinkSync } from "fs";
-import { join as join12 } from "path";
+import { join as join13 } from "path";
 import z12 from "zod";
-function getPromptsDir10() {
-  const homeDir = process.env.APPDATA || join12(process.env.HOME || "", ".evpagent");
-  if (process.platform === "win32") {
-    return join12(process.env.APPDATA, "EVPAgent", "prompts", "dynamic_prompts");
-  } else if (process.platform === "darwin") {
-    return join12(homeDir, "Library", "Application Support", "EVPAgent", "prompts", "dynamic_prompts");
-  } else {
-    return join12(homeDir, ".config", "evpagent", "prompts", "dynamic_prompts");
-  }
-}
 var deletePromptTool = tool12(
   async ({ prompt }) => {
-    const promptsDir = getPromptsDir10();
-    const filePath = join12(promptsDir, prompt.section, `${prompt.promptName}.json`);
+    const promptsDir = getUserPromptsDir();
+    const filePath = join13(promptsDir, prompt.section, `${prompt.promptName}.json`);
     if (!existsSync12(filePath)) {
       return `Prompt ${prompt.promptName} not found in ${prompt.section}`;
     }
@@ -1203,7 +1097,7 @@ Your task:
 CRITICAL: If the manifest shows searchSuccess is false, do NOT call any tools, do NOT analyze prompts, do NOT make any changes. Simply end your turn without response.
 
 Only proceed with the following if searchSuccess is TRUE:
-5. Read the prompt files that were used (Rephrase.md, Loop.md, system_prompt.md) to understand their content
+5. Read the prompt files that were used (Rephrase.md, Loop.md, rover_system_prompt.md) to understand their content
 6. Analyze whether the prompts were effective for the query
 7. Decide to: update existing prompts, create new ones, or delete redundant ones
 
@@ -1253,36 +1147,48 @@ var refineGraph = new StateGraph3(RefineState).addNode("agent", callModel3).addN
 }).addEdge("tools", "agent").compile();
 
 // system/agents/SysAgent/utils/paths.mjs
-import { join as join13, dirname } from "path";
-import { homedir } from "os";
+import { join as join14, dirname } from "path";
+import { homedir as homedir2 } from "os";
 import { fileURLToPath } from "url";
-function getBaseDir() {
-  const homeDir = homedir();
+import { existsSync as existsSync13 } from "fs";
+function getBaseDir2() {
+  const homeDir = homedir2();
   if (process.platform === "win32") {
-    return process.env.APPDATA || join13(homeDir, ".evpagent");
+    return process.env.APPDATA || join14(homeDir, ".evpagent");
   }
   if (process.platform === "darwin") {
-    return join13(homeDir, "Library", "Application Support");
+    return join14(homeDir, "Library", "Application Support");
   }
-  return process.env.XDG_CONFIG_HOME || join13(homeDir, ".config");
+  return process.env.XDG_CONFIG_HOME || join14(homeDir, ".config");
 }
-function getPromptsDir11() {
-  return join13(getBaseDir(), "EVPAgent", "prompts", "dynamic_prompts");
+function getPromptsDir() {
+  return join14(getBaseDir2(), "EVPAgent", "prompts", "dynamic_prompts");
 }
-function getConfigDir4() {
-  return join13(getBaseDir(), "EVPAgent", "prompts", "config");
+function getConfigDir() {
+  return join14(getBaseDir2(), "EVPAgent", "prompts", "config");
 }
 function getScriptDir() {
-  if (typeof __dirname !== "undefined" && __dirname !== import.meta.url) {
-    return __dirname;
+  const entryDir = dirname(fileURLToPath(import.meta.url));
+  const possiblePaths = [
+    // Bundled npm: node_modules/evpagent/prompts/
+    join14(entryDir, "..", "..", "..", "..", "prompts"),
+    // Built dist: EVPAgent/src/dist/prompts/
+    join14(entryDir, "..", "..", "system", "prompts"),
+    // Development source: EVPAgent/system/prompts/
+    join14(entryDir, "..", "..", "..", "..", "system", "prompts")
+  ];
+  for (const p of possiblePaths) {
+    if (existsSync13(p)) {
+      return p;
+    }
   }
-  return dirname(fileURLToPath(import.meta.url));
+  return possiblePaths[0];
 }
 
 // system/agents/SysAgent/utils/files.mjs
-import { existsSync as existsSync13, readFileSync as readFileSync13 } from "fs";
+import { existsSync as existsSync14, readFileSync as readFileSync13 } from "fs";
 function readJson(path3) {
-  if (!existsSync13(path3)) return null;
+  if (!existsSync14(path3)) return null;
   try {
     return JSON.parse(readFileSync13(path3, "utf-8"));
   } catch {
@@ -1290,7 +1196,7 @@ function readJson(path3) {
   }
 }
 function readFile(path3) {
-  if (!existsSync13(path3)) return null;
+  if (!existsSync14(path3)) return null;
   const content = readFileSync13(path3, "utf-8");
   return content.trim() || null;
 }
@@ -1321,12 +1227,19 @@ function isNonEmptyString(val) {
 }
 
 // system/agents/SysAgent/index.mjs
-import { existsSync as existsSync14, cpSync, mkdirSync as mkdirSync2, readdirSync as readdirSync3, unlinkSync as unlinkSync2 } from "fs";
-import { join as join14 } from "path";
+import { existsSync as existsSync15, cpSync, mkdirSync as mkdirSync2, readdirSync as readdirSync3, unlinkSync as unlinkSync2, writeFileSync as writeFileSync6 } from "fs";
+import { join as join15 } from "path";
 var SysAgent = class {
   // ─────────────────────────────────────────────────────────────────────────────
-  // Constructor
+  // Constructor & Config
   // ─────────────────────────────────────────────────────────────────────────────
+  /**
+   * Create a new SysAgent instance
+   * @param {Object} config - Configuration options
+   * @param {string} config.baseURL - LLM base URL
+   * @param {string} config.apiKey - LLM API key
+   * @param {string} config.modelId - LLM model ID
+   */
   constructor(config = {}) {
     this.baseConfig = {
       configurable: {
@@ -1339,44 +1252,69 @@ var SysAgent = class {
     this._initialized = false;
   }
   // ─────────────────────────────────────────────────────────────────────────────
-  // Public API
+  // Public API - Entry Points
   // ─────────────────────────────────────────────────────────────────────────────
-  /** Stream results as async generator */
-  async *stream(userQuery) {
+  /**
+   * Stream results as async generator
+   * @param {string} userQuery - The query to search
+   * @param {'probe'|'rover'} mode - Workflow mode: probe (fast) or rover (in-depth)
+   */
+  async *stream(userQuery, mode = "probe") {
     if (!this._initialized) await this.init();
-    yield* this.compose(userQuery);
-    yield* this.search(userQuery);
-    yield* this.refine();
+    this.#resetSessionFiles();
+    if (mode === "probe") {
+      yield* this.#searchWithPrompt(userQuery, this.#getProbePrompt());
+    } else {
+      yield* this.#compose(userQuery);
+      yield* this.#searchWithPrompt(userQuery, this.#getRoverPrompt());
+      yield* this.#refine();
+    }
   }
-  /** Collect all chunks into array */
-  async invoke(userQuery) {
+  /**
+   * Collect all chunks into array and return
+   * @param {string} userQuery - The query to search
+   * @param {'probe'|'rover'} mode - Workflow mode
+   * @returns {Promise<Array>} Array of chunks
+   */
+  async invoke(userQuery, mode = "probe") {
     const chunks = [];
-    for await (const chunk of this.stream(userQuery)) {
+    for await (const chunk of this.stream(userQuery, mode)) {
       chunks.push(chunk);
     }
     return chunks;
   }
-  /** Get cache stats */
+  /**
+   * Get cache statistics (vector hits, web requests, etc.)
+   * @returns {Object} Stats object
+   */
   getStats() {
     return getStats();
   }
-  /** Reset response stats */
+  /**
+   * Reset response statistics to zero
+   */
   resetStats() {
     resetResponseStats();
   }
-  /** Reset vector DB - delete all cached data */
+  /**
+   * Delete all data in the vector database (LanceDB)
+   * This clears all cached Wikipedia content
+   */
   async resetVectorDB() {
     await resetVectorDB();
   }
-  /** Reset prompts to default */
+  /**
+   * Reset dynamic prompt files to default versions
+   * Removes user-modified Rephrase.json and Loop.json
+   */
   resetPrompts() {
-    const promptsDir = getPromptsDir11();
+    const promptsDir = getPromptsDir();
     for (const subdir of ["Loop", "Rephrase"]) {
-      const dir = join14(promptsDir, subdir);
-      if (!existsSync14(dir)) continue;
+      const dir = join15(promptsDir, subdir);
+      if (!existsSync15(dir)) continue;
       for (const file of readdirSync3(dir)) {
         if (file.endsWith(".json")) {
-          unlinkSync2(join14(dir, file));
+          unlinkSync2(join15(dir, file));
         }
       }
     }
@@ -1384,59 +1322,91 @@ var SysAgent = class {
   // ─────────────────────────────────────────────────────────────────────────────
   // Initialization
   // ─────────────────────────────────────────────────────────────────────────────
-  /** Initialize: ensure config and prompt files exist */
+  /**
+   * Initialize agent: ensure all config and prompt files exist in user directory
+   * Copies default files from dist if they don't exist
+   */
   async init() {
     if (this._initialized) return;
     this._ensureConfigFiles();
     this._ensurePromptFiles();
     this._initialized = true;
   }
-  /** Ensure config files are in user directory */
+  /**
+   * Ensure config prompt files exist in user directory
+   * Copies from system/prompts/config/rover and /probe if missing
+   */
   _ensureConfigFiles() {
-    const userDir = getConfigDir4();
-    const distDir = join14(getScriptDir(), "prompts", "config");
-    if (!existsSync14(userDir)) {
+    const userDir = getConfigDir();
+    const distDir = join15(getScriptDir(), "config");
+    if (!existsSync15(userDir)) {
       mkdirSync2(userDir, { recursive: true });
     }
-    for (const file of ["system_prompt.md", "Rephrase.md", "Loop.md"]) {
-      const src = join14(distDir, file);
-      const dest = join14(userDir, file);
-      if (existsSync14(src)) cpSync(src, dest, { force: true });
+    const roverSrc = join15(distDir, "rover");
+    const roverDest = join15(userDir, "rover");
+    if (!existsSync15(roverDest)) mkdirSync2(roverDest, { recursive: true });
+    for (const file of ["rover_system_prompt.md", "Loop.md", "Rephrase.md"]) {
+      const src = join15(roverSrc, file);
+      const dest = join15(roverDest, file);
+      if (existsSync15(src)) cpSync(src, dest, { force: true });
+    }
+    const probeSrc = join15(distDir, "probe");
+    const probeDest = join15(userDir, "probe");
+    if (!existsSync15(probeDest)) mkdirSync2(probeDest, { recursive: true });
+    for (const file of ["probe_system_prompt.md"]) {
+      const src = join15(probeSrc, file);
+      const dest = join15(probeDest, file);
+      if (existsSync15(src)) cpSync(src, dest, { force: true });
     }
   }
-  /** Ensure prompt subdirectories exist and copy defaults */
+  /**
+   * Ensure dynamic prompt subdirectories exist and copy defaults
+   * Creates Loop/ and Rephrase/ subdirectories in user prompts dir
+   */
   _ensurePromptFiles() {
-    const userDir = getPromptsDir11();
-    const distDir = join14(getScriptDir(), "prompts", "dynamic_prompts");
+    const userDir = getPromptsDir();
+    const distDir = join15(getScriptDir(), "dynamic_prompts");
     for (const subdir of ["Loop", "Rephrase"]) {
-      const userSubDir = join14(userDir, subdir);
-      const distSubDir = join14(distDir, subdir);
-      if (!existsSync14(userSubDir)) {
+      const userSubDir = join15(userDir, subdir);
+      const distSubDir = join15(distDir, subdir);
+      if (!existsSync15(userSubDir)) {
         mkdirSync2(userSubDir, { recursive: true });
       }
-      if (existsSync14(distSubDir)) {
+      if (existsSync15(distSubDir)) {
         for (const file of readdirSync3(distSubDir)) {
-          cpSync(join14(distSubDir, file), join14(userSubDir, file), { force: true });
+          cpSync(join15(distSubDir, file), join15(userSubDir, file), { force: true });
         }
       }
     }
   }
   // ─────────────────────────────────────────────────────────────────────────────
-  // Pipeline Steps
+  // Private - Pipeline Steps
   // ─────────────────────────────────────────────────────────────────────────────
-  /** Step 1: Compose dynamic system prompt */
-  async *compose(userQuery) {
+  /**
+   * Step 1: Compose dynamic system prompt (Rover only)
+   * Uses PromptComposerAgent to build context-aware system prompt
+   * @param {string} userQuery - The query to compose prompt for
+   */
+  async *#compose(userQuery) {
     const state = { messages: [{ role: "user", content: userQuery }] };
     const stream = await composerGraph.stream(state, this.baseConfig);
     for await (const chunk of stream) {
       yield* this.#yieldChunk(chunk);
     }
   }
-  /** Step 2: Search using dynamic system prompt */
-  async *search(userQuery) {
+  /**
+   * Step 2: Search using given system prompt
+   * Uses SearchAgent with provided prompt (Probe or Rover)
+   * @param {string} userQuery - The query to search
+   * @param {string} systemPrompt - System prompt to use for this search
+   */
+  async *#searchWithPrompt(userQuery, systemPrompt) {
     const config = {
       ...this.baseConfig,
-      configurable: { ...this.baseConfig.configurable, systemPrompt: this.#getSystemPrompt() }
+      configurable: {
+        ...this.baseConfig.configurable,
+        systemPrompt
+      }
     };
     const state = { messages: [{ role: "user", content: userQuery }] };
     const stream = await searchGraph.stream(state, config);
@@ -1444,8 +1414,12 @@ var SysAgent = class {
       yield* this.#yieldChunk(chunk);
     }
   }
-  /** Step 3: Refine prompts (only if search succeeded) */
-  async *refine() {
+  /**
+   * Step 3: Refine prompts based on search results
+   * Uses PromptRefineAgent to improve Rephrase and Loop prompts
+   * Only runs if search was successful
+   */
+  async *#refine() {
     if (!this.#checkSearchSuccess()) return;
     const state = { messages: [] };
     const stream = await refineGraph.stream(state, this.baseConfig);
@@ -1454,35 +1428,89 @@ var SysAgent = class {
     }
   }
   // ─────────────────────────────────────────────────────────────────────────────
-  // Private Helpers
+  // Private - Prompt Loaders
   // ─────────────────────────────────────────────────────────────────────────────
-  /** Get system prompt (dynamic or default with placeholders filled) */
-  #getSystemPrompt() {
-    const dynamicPath = join14(getPromptsDir11(), "dynamic_system_prompt.md");
+  /**
+   * Get system prompt for Rover mode
+   * First checks for dynamic prompt file, otherwise builds from rover/rover_system_prompt.md
+   * with ${Rephrase} and ${Loop} placeholders replaced
+   * @returns {string} Rover system prompt text
+   */
+  #getRoverPrompt() {
+    const dynamicPath = join15(getPromptsDir(), "dynamic_system_prompt.md");
     const dynamic = readFile(dynamicPath);
     if (dynamic) return dynamic;
-    const configDir = getConfigDir4();
-    let prompt = readFile(join14(configDir, "system_prompt.md")) || "You are a helpful assistant.";
+    const configDir = join15(getConfigDir(), "rover");
+    let prompt = readFile(join15(configDir, "rover_system_prompt.md")) || "You are a helpful assistant.";
     for (const [placeholder, fileName] of Object.entries({
       "${Rephrase}": "Rephrase.md",
       "${Loop}": "Loop.md"
     })) {
-      const content = readFile(join14(configDir, fileName));
+      const content = readFile(join15(configDir, fileName));
       if (content) prompt = prompt.replace(placeholder, content);
     }
     return prompt;
   }
-  /** Check if search was successful */
+  /**
+   * Get system prompt for Probe mode
+   * Loads from probe/probe_system_prompt.md - minimal static prompt
+   * @returns {string} Probe system prompt text
+   */
+  #getProbePrompt() {
+    const configDir = join15(getConfigDir(), "probe");
+    return readFile(join15(configDir, "probe_system_prompt.md")) || "You are EVPAgent. Answer using Wikipedia.";
+  }
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Private - Session Management
+  // ─────────────────────────────────────────────────────────────────────────────
+  /**
+   * Reset session files for a fresh query
+   * Clears session_manifest.json and output.md
+   * Called at start of both Probe and Rover pipelines
+   */
+  #resetSessionFiles() {
+    const promptsDir = getPromptsDir();
+    const manifestPath = join15(promptsDir, "session_manifest.json");
+    const homeDir = process.env.APPDATA || join15(process.env.HOME || "", ".evpagent");
+    const outputDir = process.platform === "win32" ? join15(process.env.APPDATA, "EVPAgent", "output") : process.platform === "darwin" ? join15(homeDir, "Library", "Application Support", "EVPAgent", "output") : join15(homeDir, ".config", "evpagent", "output");
+    const outputFile = join15(outputDir, "output.md");
+    const emptyManifest = {
+      searchHistory: [],
+      searchSuccess: false,
+      timestamp: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    writeFileSync6(manifestPath, JSON.stringify(emptyManifest, null, 2), "utf-8");
+    if (existsSync15(outputFile)) {
+      writeFileSync6(outputFile, "", "utf-8");
+    }
+  }
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Private - Helpers
+  // ─────────────────────────────────────────────────────────────────────────────
+  /**
+   * Check if the last search was successful
+   * Reads searchSuccess from session_manifest.json
+   * @returns {boolean} True if search succeeded
+   */
   #checkSearchSuccess() {
-    const manifest = readJson(join14(getPromptsDir11(), "session_manifest.json"));
+    const manifest = readJson(join15(getPromptsDir(), "session_manifest.json"));
     return manifest?.searchSuccess === true;
   }
-  /** Yield chunk from LangGraph output */
+  /**
+   * Yield a chunk from LangGraph output
+   * Wraps extraction and handles null
+   * @param {Object} chunk - LangGraph output chunk
+   */
   *#yieldChunk(chunk) {
     const delta = this.#extractDelta(chunk);
     if (delta) yield delta;
   }
-  /** Extract OpenAI-compatible delta from LangGraph chunk */
+  /**
+   * Extract OpenAI-compatible delta from LangGraph chunk
+   * Returns tool calls or text content as appropriate chunk format
+   * @param {Object} chunk - LangGraph output chunk
+   * @returns {Object|null} Delta object or null
+   */
   #extractDelta(chunk) {
     if (!chunk) return null;
     for (const [, nodeState] of Object.entries(chunk)) {
@@ -1504,6 +1532,7 @@ var SysAgent = class {
 
 // src/cli.js
 var sysAgent = new SysAgent();
+var currentMode = "probe";
 var rl = readline.createInterface({
   input: process.stdin,
   output: process.stdout
@@ -1522,7 +1551,7 @@ async function runQuery(query) {
   let responseBuffer = "";
   let waitingForResponse = false;
   try {
-    for await (const chunk of sysAgent.stream(query)) {
+    for await (const chunk of sysAgent.stream(query, currentMode)) {
       if (chunk?.choices?.[0]?.delta?.tool_calls) {
         const tc = chunk.choices[0].delta.tool_calls[0];
         const params = Object.entries(tc.args || {}).map(([k, v]) => `${k}=${typeof v === "string" ? v : JSON.stringify(v)}`).join(", ");
@@ -1540,9 +1569,9 @@ async function runQuery(query) {
       }
     }
     if (responseBuffer) {
-      print(`Agent: ${responseBuffer}`);
+      print(`${currentMode}: ${responseBuffer}`);
     } else {
-      print("Agent: (no output)");
+      print(`${currentMode}: (no output)`);
     }
   } catch (error) {
     print(`Error: ${error.message}`);
@@ -1554,6 +1583,25 @@ async function runQuery(query) {
     print(`[Cache: ${hitRate}% (${stats2.vectorHits}/${total})]`);
   }
   sysAgent.resetStats();
+}
+function handleMode(command) {
+  const parts = command.toLowerCase().replace("/", "").trim().split(/\s+/);
+  const action = parts[0];
+  const modeArg = parts[1];
+  if (action === "mode" && !modeArg) {
+    print(`Current mode: ${currentMode}`);
+    print("  probe: fast search with minimal prompt");
+    print("  rover: in-depth search with compose/refine pipeline");
+    print("Usage: /mode probe, /mode rover");
+  } else if (action === "mode" && modeArg === "probe") {
+    currentMode = "probe";
+    print("Switched to Probe mode (fast, minimal prompt)");
+  } else if (action === "mode" && modeArg === "rover") {
+    currentMode = "rover";
+    print("Switched to Rover mode (in-depth, full pipeline)");
+  } else {
+    print("Usage: /mode, /mode probe, or /mode rover");
+  }
 }
 async function handleReset(command) {
   const arg = command.split(" ")[1]?.toLowerCase();
@@ -1577,7 +1625,7 @@ async function handleReset(command) {
 print("\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550");
 print("          EVPAgent - Ask questions no one ever asked");
 print("\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550");
-print("Commands: /reset [db|prompts|all] | /exit\n");
+print("Commands: /mode | /reset | /exit\n");
 async function main() {
   while (true) {
     const input = await askQuestion();
@@ -1586,6 +1634,11 @@ async function main() {
     if (trimmed.toLowerCase() === "/exit") {
       print("Goodbye!");
       break;
+    }
+    if (trimmed.toLowerCase().startsWith("/mode")) {
+      handleMode(trimmed);
+      print("");
+      continue;
     }
     if (trimmed.toLowerCase().startsWith("/reset")) {
       await handleReset(trimmed);

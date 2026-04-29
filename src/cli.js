@@ -4,10 +4,13 @@
  * EVPAgent CLI - Simple Node.js readline interface
  *
  * Commands:
- *   /reset db      - Clear vector DB cache
- *   /reset prompts  - Reset prompts to default
- *   /reset all     - Reset both
- *   /exit          - Exit CLI
+ *   /mode              - Show current mode
+ *   /mode probe        - Switch to Probe mode (fast, minimal prompt)
+ *   /mode rover        - Switch to Rover mode (in-depth, full pipeline)
+ *   /reset db          - Clear vector DB cache
+ *   /reset prompts     - Reset prompts to default
+ *   /reset all         - Reset both
+ *   /exit              - Exit CLI
  */
 
 import 'dotenv/config';
@@ -19,6 +22,7 @@ import { SysAgent } from '../system/agents/SysAgent/index.mjs';
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const sysAgent = new SysAgent();
+let currentMode = 'probe';  // Default mode
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CLI Interface
@@ -46,7 +50,7 @@ async function runQuery(query) {
   let waitingForResponse = false;
 
   try {
-    for await (const chunk of sysAgent.stream(query)) {
+    for await (const chunk of sysAgent.stream(query, currentMode)) {
       // Tool call - print name and params
       if (chunk?.choices?.[0]?.delta?.tool_calls) {
         const tc = chunk.choices[0].delta.tool_calls[0];
@@ -73,9 +77,9 @@ async function runQuery(query) {
 
     // Print response
     if (responseBuffer) {
-      print(`Agent: ${responseBuffer}`);
+      print(`${currentMode}: ${responseBuffer}`);
     } else {
-      print('Agent: (no output)');
+      print(`${currentMode}: (no output)`);
     }
   } catch (error) {
     print(`Error: ${error.message}`);
@@ -89,6 +93,27 @@ async function runQuery(query) {
     print(`[Cache: ${hitRate}% (${stats.vectorHits}/${total})]`);
   }
   sysAgent.resetStats();
+}
+
+function handleMode(command) {
+  const parts = command.toLowerCase().replace('/', '').trim().split(/\s+/);
+  const action = parts[0];
+  const modeArg = parts[1];
+
+  if (action === 'mode' && !modeArg) {
+    print(`Current mode: ${currentMode}`);
+    print('  probe: fast search with minimal prompt');
+    print('  rover: in-depth search with compose/refine pipeline');
+    print('Usage: /mode probe, /mode rover');
+  } else if (action === 'mode' && modeArg === 'probe') {
+    currentMode = 'probe';
+    print('Switched to Probe mode (fast, minimal prompt)');
+  } else if (action === 'mode' && modeArg === 'rover') {
+    currentMode = 'rover';
+    print('Switched to Rover mode (in-depth, full pipeline)');
+  } else {
+    print('Usage: /mode, /mode probe, or /mode rover');
+  }
 }
 
 async function handleReset(command) {
@@ -119,7 +144,7 @@ async function handleReset(command) {
 print('═══════════════════════════════════════════════════════════════');
 print('          EVPAgent - Ask questions no one ever asked');
 print('═══════════════════════════════════════════════════════════════');
-print('Commands: /reset [db|prompts|all] | /exit\n');
+print('Commands: /mode | /reset | /exit\n');
 
 async function main() {
   while (true) {
@@ -132,6 +157,12 @@ async function main() {
     if (trimmed.toLowerCase() === '/exit') {
       print('Goodbye!');
       break;
+    }
+
+    if (trimmed.toLowerCase().startsWith('/mode')) {
+      handleMode(trimmed);
+      print('');
+      continue;
     }
 
     if (trimmed.toLowerCase().startsWith('/reset')) {

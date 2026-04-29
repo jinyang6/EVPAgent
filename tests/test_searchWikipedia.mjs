@@ -1,4 +1,4 @@
-import { searchWikipediaTool } from '../system/agents/SearchAgent/tools/wikipedia/searchWikipedia.mjs';
+import { searchWikipediaTool } from '../system/agents/MainAgent/tools/wikipedia/searchWikipedia.mjs';
 
 async function test() {
   console.log('Testing searchWikipedia...\n');
@@ -23,9 +23,9 @@ async function test() {
   const result4 = await searchWikipediaTool.invoke({ query: 'Mars AND ocean NOT river', limit: 3 });
   console.log(result4);
 
-  // Test 5: Cache disabled (force web fetch)
-  console.log('\n=== Test 5: Force Web Fetch ===\n');
-  const result5 = await searchWikipediaTool.invoke({ query: 'Perseverance rover', limit: 5, useCache: false });
+  // Test 5: Perseverance rover search
+  console.log('\n=== Test 5: Perseverance Rover ===\n');
+  const result5 = await searchWikipediaTool.invoke({ query: 'Perseverance rover', limit: 5 });
   console.log(result5);
 }
 

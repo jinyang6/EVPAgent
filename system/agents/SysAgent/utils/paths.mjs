@@ -5,6 +5,7 @@
 import { join, dirname } from "path";
 import { homedir } from "os";
 import { fileURLToPath } from "url";
+import { existsSync } from "fs";
 
 /**
  * Get base directory for user config
@@ -35,11 +36,28 @@ export function getConfigDir() {
 }
 
 /**
- * Get directory of the running script (for bundled resources)
+ * Get directory of the EVPAgent system prompts
+ * Returns path to the prompts folder containing config/
  */
 export function getScriptDir() {
-  if (typeof __dirname !== "undefined" && __dirname !== import.meta.url) {
-    return __dirname;
+  const entryDir = dirname(fileURLToPath(import.meta.url));
+
+  // Try multiple possible locations
+  const possiblePaths = [
+    // Bundled npm: node_modules/evpagent/prompts/
+    join(entryDir, "..", "..", "..", "..", "prompts"),
+    // Built dist: EVPAgent/src/dist/prompts/
+    join(entryDir, "..", "..", "system", "prompts"),
+    // Development source: EVPAgent/system/prompts/
+    join(entryDir, "..", "..", "..", "..", "system", "prompts"),
+  ];
+
+  for (const p of possiblePaths) {
+    if (existsSync(p)) {
+      return p;
+    }
   }
-  return dirname(fileURLToPath(import.meta.url));
+
+  // Fallback: return first path
+  return possiblePaths[0];
 }

@@ -2,34 +2,7 @@ import { tool } from "@langchain/core/tools";
 import { readFileSync, existsSync, writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
 import z from "zod";
-
-/**
- * Get platform-aware prompts directory
- */
-function getPromptsDir() {
-  const homeDir = process.env.APPDATA || join(process.env.HOME || "", ".evpagent");
-  if (process.platform === 'win32') {
-    return join(process.env.APPDATA, "EVPAgent", "prompts", "dynamic_prompts");
-  } else if (process.platform === 'darwin') {
-    return join(homeDir, "Library", "Application Support", "EVPAgent", "prompts", "dynamic_prompts");
-  } else {
-    return join(homeDir, ".config", "evpagent", "prompts", "dynamic_prompts");
-  }
-}
-
-/**
- * Get output directory (EVPAgent/output)
- */
-function getOutputDir() {
-  const homeDir = process.env.APPDATA || join(process.env.HOME || "", ".evpagent");
-  if (process.platform === 'win32') {
-    return join(process.env.APPDATA, "EVPAgent", "output");
-  } else if (process.platform === 'darwin') {
-    return join(homeDir, "Library", "Application Support", "EVPAgent", "output");
-  } else {
-    return join(homeDir, ".config", "evpagent", "output");
-  }
-}
+import { getUserPromptsDir, getOutputDir } from "../../../utils/appDataPaths.mjs";
 
 /**
  * Get output file path
@@ -47,7 +20,7 @@ function getOutputFile() {
  */
 export const reportTool = tool(
   async ({ searchSuccess, response }) => {
-    const promptsDir = getPromptsDir();
+    const promptsDir = getUserPromptsDir();
     const manifestPath = join(promptsDir, 'session_manifest.json');
 
     // Write response to output.md if provided

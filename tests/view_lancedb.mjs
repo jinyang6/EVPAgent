@@ -1,4 +1,4 @@
-import { getTable } from "../system/agents/SearchAgent/tools/vector/vectorHelpers.mjs";
+import { getTable } from "../system/agents/MainAgent/tools/vector/vectorHelpers.mjs";
 
 console.log("Viewing LanceDB contents...\n");
 

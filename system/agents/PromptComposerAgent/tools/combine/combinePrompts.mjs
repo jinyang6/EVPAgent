@@ -3,47 +3,21 @@ import { readFileSync, existsSync, writeFileSync } from "fs";
 import { join } from "path";
 import z from "zod";
 
-/**
- * Get platform-aware prompts directory
- */
-function getPromptsDir() {
-  const homeDir = process.env.APPDATA || join(process.env.HOME || "", ".evpagent");
-  if (process.platform === 'win32') {
-    return join(process.env.APPDATA, "EVPAgent", "prompts", "dynamic_prompts");
-  } else if (process.platform === 'darwin') {
-    return join(homeDir, "Library", "Application Support", "EVPAgent", "prompts", "dynamic_prompts");
-  } else {
-    return join(homeDir, ".config", "evpagent", "prompts", "dynamic_prompts");
-  }
-}
-
-/**
- * Get platform-aware config directory
- */
-function getConfigDir() {
-  const homeDir = process.env.APPDATA || join(process.env.HOME || "", ".evpagent");
-  if (process.platform === 'win32') {
-    return join(process.env.APPDATA, "EVPAgent", "prompts", "config");
-  } else if (process.platform === 'darwin') {
-    return join(homeDir, "Library", "Application Support", "EVPAgent", "prompts", "config");
-  } else {
-    return join(homeDir, ".config", "evpagent", "prompts", "config");
-  }
-}
+import { getUserPromptsDir, getUserConfigDir } from "../../../utils/appDataPaths.mjs";
 
 /**
  * Combine selected prompts and write dynamic_system_prompt.md and session_manifest.json
  */
 export const combinePromptsTool = tool(
   async ({ prompts, userQuery }) => {
-    const promptsDir = getPromptsDir();
-    
+    const promptsDir = getUserPromptsDir();
+
     // Read base system prompt
-    const configDir = getConfigDir();
-    const systemPromptPath = join(configDir, 'system_prompt.md');
+    const configDir = getUserConfigDir();
+    const systemPromptPath = join(configDir, 'rover', 'rover_system_prompt.md');
     
     if (!existsSync(systemPromptPath)) {
-      return "Error: system_prompt.md not found";
+      return "Error: rover_system_prompt.md not found";
     }
     
     let systemPrompt = readFileSync(systemPromptPath, 'utf-8');

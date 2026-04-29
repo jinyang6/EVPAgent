@@ -3,37 +3,14 @@ import { tool } from "@langchain/core/tools";
 import z from "zod";
 import { readFileSync, existsSync, writeFileSync } from "fs";
 import { join } from "path";
-import {
-  searchVectorDB,
-  upsertWikipediaSearch,
-  formatCachedSearchResults,
-} from "../vector/vectorHelpers.mjs";
-import {
-  recordVectorHit,
-  recordWebRequest,
-  recordQuery,
-} from "../stats.mjs";
-
-/**
- * Get platform-aware prompts directory
- */
-function getPromptsDir() {
-  const homeDir = process.env.APPDATA || join(process.env.HOME || "", ".evpagent");
-  if (process.platform === 'win32') {
-    return join(process.env.APPDATA, "EVPAgent", "prompts", "dynamic_prompts");
-  } else if (process.platform === 'darwin') {
-    return join(homeDir, "Library", "Application Support", "EVPAgent", "prompts", "dynamic_prompts");
-  } else {
-    return join(homeDir, ".config", "evpagent", "prompts", "dynamic_prompts");
-  }
-}
+import { getUserPromptsDir } from "../../../utils/appDataPaths.mjs";
 
 /**
  * Report search result to session_manifest.json
  */
 function reportSearchResult(query, results) {
   try {
-    const promptsDir = getPromptsDir();
+    const promptsDir = getUserPromptsDir();
     const manifestPath = join(promptsDir, 'session_manifest.json');
 
     let manifest = { searchHistory: [], searchSuccess: false };
@@ -72,34 +49,11 @@ const wikipediaSearchSchema = z.object({
   limit: z.number().optional().default(5).describe('Number of results: 3 for simple facts, 5 for default, 10+ for comprehensive research'),
   type: z.enum(['text', 'nearmatch']).optional().default('text')
     .describe('Type of search: text (full text) or nearmatch'),
-  // useCache: z.boolean().optional().default(true).describe('Whether to use vector cache for retrieval'),
 });
 
-async function wikipediaSearch({ query, limit = 5, type = 'text' /*, useCache = true */ }) {
+async function wikipediaSearch({ query, limit = 5, type = 'text' }) {
   // ==========================================================================
-  // Step 1: Check vector cache first if useCache is true (DISABLED - inefficient)
-  // ==========================================================================
-  // if (useCache) {
-  //   try {
-  //     const cachedResults = await searchVectorDB(query, limit, "wikipediaSearch");
-  //
-  //     if (cachedResults && cachedResults.length > 0) {
-  //       recordVectorHit("search");
-  //       recordQuery(query);
-  //       const formatted = formatCachedSearchResults(cachedResults);
-  //
-  //       // Cache hit - save to manifest and return
-  //       reportSearchResult(query, formatted);
-  //       return `${formatted}\n\n_Cache hit - retrieved from local vector database_`;
-  //     }
-  //   } catch (error) {
-  //     // Cache lookup failed, continue to web search
-  //     console.error("[searchWikipedia] wikipediaSearch() cache lookup failed:", error.message);
-  //   }
-  // }
-
-  // ==========================================================================
-  // Step 2: Fetch from Wikipedia API
+  // Fetch from Wikipedia API
   // ==========================================================================
   const params = new URLSearchParams({
     action: 'query',
@@ -143,17 +97,6 @@ async function wikipediaSearch({ query, limit = 5, type = 'text' /*, useCache = 
       output += `${snippet}\n\n`;
     });
 
-    // ==========================================================================
-    // Step 3: Store results to vector cache (DISABLED - inefficient)
-    // ==========================================================================
-    // recordWebRequest("search");
-    // recordQuery(query);
-    //
-    // // Store entire formatted search result as single record
-    // upsertWikipediaSearch(query, output).catch((error) => {
-    //   console.error("[searchWikipedia] wikipediaSearch() failed to cache results:", error.message);
-    // });
-
     // Report result before returning
     reportSearchResult(query, output);
 
@@ -187,5 +130,3 @@ Returns: Page titles, URLs, snippets.`,
     schema: wikipediaSearchSchema,
   }
 );
-
-// - useCache (optional, default=true): Set to false to force web fetch
