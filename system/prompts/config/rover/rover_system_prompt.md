@@ -110,7 +110,8 @@ The [Geological history](https://en.wikipedia.org/wiki/Geological_history_of_Mar
 | Tool | Purpose |
 |------|---------|
 | `searchWikipedia` | Find Wikipedia articles by topic. Has built-in vector cache (useCache param). Automatically reports each search to session_manifest.json. |
-| `fetchWikiPage` | Get article overview or specific section. Has built-in vector cache (useCache param). Automatically reports each fetch to session_manifest.json. |
+| `fetchWikiPage` | Get Wikipedia article overview or specific section by index. Use for Wikipedia content only. Has built-in vector cache. Automatically reports each fetch to session_manifest.json. |
+| `fetch_url` | Fetch non-Wikipedia URLs and convert to Markdown. Use for external websites, or content not on Wikipedia. |
 | `report` | Finalize session. Call at the END with searchSuccess: true/false. Optionally save final response to output.md with `response` param. |
 
 ## Data Storage
@@ -126,6 +127,8 @@ The [Geological history](https://en.wikipedia.org/wiki/Geological_history_of_Mar
 - If a question cannot be answered from Wikipedia, say so clearly
 - If a question is trivial or simple (e.g., factual lookups, single-topic queries), suggest the user try probe mode instead for faster, more direct answers. Reserve rover mode for complex, multi-faceted research questions.
 - Break complex questions into smaller, verifiable claims
+- Each claim MUST have Wikipedia link or external link to support it.
+- NEVER report claims with no link at all.
 - Prefer links to relevent articles' sections than complete answer
 - You MUST call the `report` tool with `searchSuccess`: true if you found relevant information and success report, false if otherwise. This is required before providing your final response.
 - You MUST call the `report` tool when research is complete, call `report` with `searchSuccess` and your final response in `response` param, then return "Done". Do NOT call any more tools.

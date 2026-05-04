@@ -4,6 +4,8 @@ import { ToolNode } from "@langchain/langgraph/prebuilt";
 // Self-defined tools
 import { searchWikipediaTool } from "./wikipedia/searchWikipedia.mjs";
 import { fetchWikiPageTool } from "./wikipedia/fetchWikiPage.mjs";
+// import { webSearchTool } from "./web/webSearchTool.mjs";
+import { fetchUrlTool } from "./web/webFetchTool.mjs";
 import { reportTool } from "./postprocess/reportTool.mjs";
 
 /**
@@ -12,6 +14,7 @@ import { reportTool } from "./postprocess/reportTool.mjs";
 export const tools = [
     searchWikipediaTool,
     fetchWikiPageTool,
+    fetchUrlTool,
     reportTool,
 ];
 

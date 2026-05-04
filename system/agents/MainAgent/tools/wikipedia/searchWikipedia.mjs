@@ -1,44 +1,6 @@
-import axios from "axios";
 import { tool } from "@langchain/core/tools";
 import z from "zod";
-import { readFileSync, existsSync, writeFileSync } from "fs";
-import { join } from "path";
-import { getUserPromptsDir } from "../../../utils/appDataPaths.mjs";
-
-/**
- * Report search result to session_manifest.json
- */
-function reportSearchResult(query, results) {
-  try {
-    const promptsDir = getUserPromptsDir();
-    const manifestPath = join(promptsDir, 'session_manifest.json');
-
-    let manifest = { searchHistory: [], searchSuccess: false };
-    if (existsSync(manifestPath)) {
-      try {
-        const content = readFileSync(manifestPath, 'utf-8').trim();
-        if (content) {
-          manifest = JSON.parse(content);
-        }
-      } catch {
-        // File exists but invalid JSON - start fresh
-      }
-    }
-
-    if (!manifest.searchHistory) manifest.searchHistory = [];
-
-    manifest.searchHistory.push({
-      tool: 'searchWikipedia',
-      arguments: { query, limit: 5 },
-      result: results.slice(0, 1000),
-      timestamp: new Date().toISOString()
-    });
-
-    writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), 'utf-8');
-  } catch (error) {
-    console.error("[searchWikipedia] reportSearchResult() failed:", error.message);
-  }
-}
+import { wikiRequest, reportWikiResult, WIKI_USER_AGENT } from "./wikipediaHelpers.mjs";
 
 /**
  * Search Wikipedia using MediaWiki Action API
@@ -52,39 +14,22 @@ const wikipediaSearchSchema = z.object({
 });
 
 async function wikipediaSearch({ query, limit = 5, type = 'text' }) {
-  // ==========================================================================
-  // Fetch from Wikipedia API
-  // ==========================================================================
-  const params = new URLSearchParams({
-    action: 'query',
-    list: 'search',
-    srsearch: query,
-    srnamespace: '0',
-    srlimit: String(limit),
-    srwhat: type,
-    srprop: 'size|wordcount|timestamp|snippet|titlesnippet',
-    format: 'json',
-    utf8: '1',
-  });
-
-  const url = `http://en.wikipedia.org/w/api.php?${params.toString()}`;
-
   try {
-    const response = await axios.get(url, {
-      headers: {
-        "User-Agent": "EVPAgent/1.0 (https://github.com/jinyang6/EVPAgent; jiatom519@gmail.com)",
-      },
-      timeout: 15000,
+    const data = await wikiRequest("query", {
+      list: "search",
+      srsearch: query,
+      srnamespace: "0",
+      srlimit: String(limit),
+      srwhat: type,
+      srprop: "size|wordcount|timestamp|snippet|titlesnippet",
+      utf8: "1",
     });
 
-    const queryData = response.data?.query;
+    const queryData = data?.query;
 
     if (!queryData?.search || queryData.search.length === 0) {
       return `Wikipedia search for "${query}" returned no results.`;
     }
-
-    const searchInfo = queryData.searchinfo || {};
-    const totalHits = searchInfo.totalhits || queryData.search.length;
 
     let output = `Wikipedia Search Results for "${query}":\n\n`;
 
@@ -97,9 +42,7 @@ async function wikipediaSearch({ query, limit = 5, type = 'text' }) {
       output += `${snippet}\n\n`;
     });
 
-    // Report result before returning
-    reportSearchResult(query, output);
-
+    reportWikiResult('searchWikipedia', { query, limit }, output);
     return output.trim();
 
   } catch (error) {
@@ -114,10 +57,15 @@ export const searchWikipediaTool = tool(
   wikipediaSearch,
   {
     name: 'searchWikipedia',
-    description: `Search Wikipedia for articles using MediaWiki Action API.
+    description: `Search Wikipedia for relevant articles by query.
+
+When to use:
+- Use when you need to FIND which Wikipedia article to read
+- Use BEFORE fetchWikiPage to locate the right page
+- Use for: fact-checking, finding articles, locating sources
 
 Parameters:
-- query (required): Search query - supports advanced operators:
+- query (required): Search query. Supports operators:
   - "exact phrase" for exact match
   - AND / OR / NOT for boolean logic (e.g., "Mars AND ocean NOT atmosphere")
   - intitle: for title-only search (e.g., intitle:"Curiosity rover")
@@ -126,7 +74,7 @@ Parameters:
 - limit (optional, default=5): Number of results (3=facts, 5=default, 10+=research)
 - type (optional): 'text' or 'nearmatch'
 
-Returns: Page titles, URLs, snippets.`,
+Returns: Numbered list of matching articles with titles, URLs, and snippets.`,
     schema: wikipediaSearchSchema,
   }
 );

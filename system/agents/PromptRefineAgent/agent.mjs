@@ -58,9 +58,10 @@ export async function callModel(state, config) {
     }).bindTools(tools);
 
     // Build messages with system prompt and all previous messages from state
+    // Always include at least one user message (some APIs require it)
     const fullMessages = [
         { role: "system", content: REFINE_SYSTEM_PROMPT },
-        ...messages  // Include full chat history
+        ...(messages.length > 0 ? messages : [{ role: "user", content: "Please analyze the session and refine prompts as needed." }])
     ];
 
     // Inference

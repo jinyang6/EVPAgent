@@ -99,6 +99,7 @@ export async function getTable() {
           type: "placeholder",
           article: "",
           section: "",
+          sectionIndex: 0,
           url: "",
           lastEdited: new Date().toISOString(),
         },
@@ -178,7 +179,7 @@ export async function getLastEditedTime(pageTitle) {
 
     return new Date().toISOString(); // Fallback to current time
   } catch (error) {
-    console.error(`[VectorDB] getLastEditedTime() failed for ${pageTitle}:`, error.message);
+    console.error(`[VectorDB::getLastEditedTime] failed for ${pageTitle}:`, error.message);
     return new Date().toISOString(); // Fallback
   }
 }
@@ -249,6 +250,7 @@ export async function searchVectorDB(query, k = 3, filterType) {
           type: row.type,
           article: row.article,
           section: row.section,
+          sectionIndex: row.sectionIndex,
           url: row.url,
           lastEdited: row.lastEdited,
         },
@@ -258,7 +260,7 @@ export async function searchVectorDB(query, k = 3, filterType) {
     return formattedResults;
   } catch (error) {
     // Don't fail the search - just log and return empty (will use web fallback)
-    console.error(`[VectorDB] searchVectorDB() failed: ${error.message}. Falling back to web search.`);
+    console.error(`[VectorDB::searchVectorDB] failed: ${error.message}. Falling back to web search.`);
     return [];
   }
 }
@@ -297,7 +299,7 @@ export async function upsertWikipediaSearch(query, fullResultText) {
     }]);
   } catch (error) {
     // Don't throw - caching failure shouldn't break the tool
-    console.error(`[VectorDB] upsertWikipediaSearch() failed: ${error.message}`);
+    console.error(`[VectorDB::upsertWikipediaSearch] failed: ${error.message}`);
   }
 }
 
@@ -309,7 +311,7 @@ export async function upsertWikipediaSearch(query, fullResultText) {
  * @param {string} content - Page/section content (stored as whole, not chunked)
  * @returns {Promise<void>}
  */
-export async function upsertWikiPage(page, section, content) {
+export async function upsertWikiPage(page, section, content, sectionIndex = 0) {
   try {
     const tbl = await getTable();
     const embeddings = getEmbeddings();
@@ -339,12 +341,13 @@ export async function upsertWikiPage(page, section, content) {
       type: section ? "pageSection" : "pageOverview",
       article: page,
       section: section || "",
+      sectionIndex: sectionIndex,
       url: url,
       lastEdited,
     }]);
   } catch (error) {
     // Don't throw - caching failure shouldn't break the tool
-    console.error(`[VectorDB] upsertWikiPage() failed: ${error.message}`);
+    console.error(`[VectorDB::upsertWikiPage] failed: ${error.message}`);
   }
 }
 

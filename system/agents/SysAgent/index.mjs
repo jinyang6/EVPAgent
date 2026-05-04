@@ -13,13 +13,16 @@
  */
 
 import { composerGraph } from "../PromptComposerAgent/graph.mjs";
+import { refineGraph } from "../PromptRefineAgent/graph.mjs";
 import { mainGraph } from "../MainAgent/graph.mjs";
-
-  import { getStats, resetResponseStats } from "../MainAgent/tools/stats.mjs";
-
-  import { resetVectorDB as resetVectorDBInternal } from "../MainAgent/tools/vector/vectorHelpers.mjs";
-import { existsSync, cpSync, mkdirSync, readdirSync, unlinkSync, writeFileSync } from "fs";
+import { getPromptsDir, getConfigDir, getScriptDir } from "./utils/paths.mjs";
+import { readFile, readJson } from "./utils/files.mjs";
+import { textChunk, toolChunk, doneChunk, isNonEmptyString } from "./types/chunk.mjs";
+import { getStats, resetResponseStats } from "../MainAgent/tools/stats.mjs";
+import { resetVectorDB as resetVectorDBInternal } from "../MainAgent/tools/vector/vectorHelpers.mjs";
+import { existsSync, cpSync, mkdirSync, readdirSync, unlinkSync, writeFileSync, readFileSync } from "fs";
 import { join } from "path";
+import { getOutputDir } from "../utils/appDataPaths.mjs";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SysAgent
@@ -31,11 +34,19 @@ export class SysAgent {
   // ─────────────────────────────────────────────────────────────────────────────
 
   /**
-   * Create a new SysAgent instance
+   * Create a new SysAgent instance.
+   *
+   * Configures the LangGraph baseConfig with LLM settings and optional tool filtering.
+   * The `tools` option accepts a boolean map to enable/disable specific tools:
+   * `{ searchWikipedia: true, fetchWikiPage: true }`
+   * `report` is always enabled regardless of this setting.
+   * `null` or omitted means all tools enabled.
+   *
    * @param {Object} config - Configuration options
-   * @param {string} config.baseURL - LLM base URL
-   * @param {string} config.apiKey - LLM API key
-   * @param {string} config.modelId - LLM model ID
+   * @param {string} [config.baseURL] - LLM API base URL (defaults to SEARCH_MODEL_BASE_URL env)
+   * @param {string} [config.apiKey] - LLM API key (defaults to SEARCH_MODEL_API_KEY env)
+   * @param {string} [config.modelId] - LLM model identifier (defaults to SEARCH_MODEL_ID env)
+   * @param {Object|null} [config.tools] - Boolean map for tool filtering
    */
   constructor(config = {}) {
     this.baseConfig = {
@@ -43,6 +54,7 @@ export class SysAgent {
         baseURL: config.baseURL || process.env.SEARCH_MODEL_BASE_URL,
         apiKey: config.apiKey || process.env.SEARCH_MODEL_API_KEY,
         modelId: config.modelId || process.env.SEARCH_MODEL_ID,
+        tools: config.tools || null,  // {searchWikipedia: true, fetchWikiPage: false} — null = all enabled
       },
       recursionLimit: 100,
     };
@@ -55,22 +67,34 @@ export class SysAgent {
 
   /**
    * Stream results as async generator
-   * @param {string} userQuery - The query to search
+   * @param {Array<{role: string, content: string}>} messages - Chat history (CLI-maintained)
    * @param {'probe'|'rover'} mode - Workflow mode: probe (fast) or rover (in-depth)
    */
-  async *stream(userQuery, mode = 'probe') {
+  async *stream(messages, mode = 'probe') {
     if (!this._initialized) await this.init();
 
     // Reset session files for fresh query
     this.#resetSessionFiles();
 
+    // Tool config per mode — report always enabled automatically
+    const tools = mode === 'probe'
+      ? { searchWikipedia: true, fetchWikiPage: true, fetch_url: true }   // probe
+      : { searchWikipedia: true, fetchWikiPage: true, fetch_url: true };  // rover: same for now
+
     if (mode === 'probe') {
-      yield* this.#runMainAgent(userQuery, this.#getProbePrompt());
+      // Probe mode: pass full chat history for multi-turn context
+      yield* this.#runMainAgent(messages, this.#getProbePrompt(), tools);
     } else {
+      // Rover mode: last user message only (fresh research context)
+      const userQuery = messages.findLast(m => m.role === "user")?.content || "";
       yield* this.#compose(userQuery);
-      yield* this.#runMainAgent(userQuery, this.#getRoverPrompt());
+      yield* this.#runMainAgent([{ role: "user", content: userQuery }], this.#getRoverPrompt(), tools);
       yield* this.#refine();
     }
+
+    // Yield output.md as final chunk (written by report tool)
+    const outputContent = this.#readOutputFile();
+    if (outputContent) yield textChunk(outputContent);
   }
 
   /**
@@ -217,19 +241,21 @@ export class SysAgent {
   }
 
   /**
-   * Step 2: Run MainAgent with given system prompt
-   * @param {string} userQuery - The query to search
-   * @param {string} systemPrompt - System prompt to use for this search
+   * Step 2: Run MainAgent with given messages, system prompt and tool set
+   * @param {Array<{role: string, content: string}>} messages - Messages to send as initial state
+   * @param {string} systemPrompt - System prompt to use
+   * @param {Object} tools - Boolean map of enabled tools
    */
-  async *#runMainAgent(userQuery, systemPrompt) {
+  async *#runMainAgent(messages, systemPrompt, tools) {
     const config = {
       ...this.baseConfig,
       configurable: {
         ...this.baseConfig.configurable,
         systemPrompt: systemPrompt,
+        tools: tools,
       },
     };
-    const state = { messages: [{ role: "user", content: userQuery }] };
+    const state = { messages };
     const stream = await mainGraph.stream(state, config);
     for await (const chunk of stream) {
       yield* this.#yieldChunk(chunk);
@@ -338,6 +364,17 @@ export class SysAgent {
   #checkSearchSuccess() {
     const manifest = readJson(join(getPromptsDir(), "session_manifest.json"));
     return manifest?.searchSuccess === true;
+  }
+
+  /**
+   * Read output.md content after agent finishes (written by report tool)
+   * @returns {string|null} Output content or null if file empty/missing
+   */
+  #readOutputFile() {
+    const outputPath = join(getOutputDir(), "output.md");
+    if (!existsSync(outputPath)) return null;
+    const content = readFileSync(outputPath, 'utf-8').trim();
+    return content || null;
   }
 
   /**

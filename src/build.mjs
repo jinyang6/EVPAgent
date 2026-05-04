@@ -100,6 +100,8 @@ await esbuild.build({
     'mime-types',
     'mime-db',
     'web-streams-ponyfill',
+    'marked',
+    'marked-terminal',
     '@langchain/core',
     '@langchain/langgraph',
     '@langchain/openai',

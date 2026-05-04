@@ -1,181 +1,159 @@
 #!/usr/bin/env node
 
 /**
- * EVPAgent CLI - Simple Node.js readline interface
+ * EVPAgent CLI — Readline interface
  *
  * Commands:
- *   /mode              - Show current mode
- *   /mode probe        - Switch to Probe mode (fast, minimal prompt)
- *   /mode rover        - Switch to Rover mode (in-depth, full pipeline)
- *   /reset db          - Clear vector DB cache
- *   /reset prompts     - Reset prompts to default
- *   /reset all         - Reset both
- *   /exit              - Exit CLI
+ *   /mode              Show current mode
+ *   /mode probe|rover  Switch mode
+ *   /reset db|prompts|all  Clear data
+ *   /exit              Quit
  */
 
 import 'dotenv/config';
 import readline from 'readline';
+import { marked } from 'marked';
+import { markedTerminal } from 'marked-terminal';
 import { SysAgent } from '../system/agents/SysAgent/index.mjs';
 
+marked.use(markedTerminal());
+
 // ═══════════════════════════════════════════════════════════════════════════════
-// Agent Setup
+// Setup
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const sysAgent = new SysAgent();
-let currentMode = 'probe';  // Default mode
+let mode = 'probe';
+const chatHistory = [];
+
+// ANSI color helpers
+const C = (code, s) => `\x1b[${code}m${s}\x1b[0m`;
+const bold = s => C(1, s);
+const cyan = s => C(36, s);
+const green = s => C(32, s);
+const yellow = s => C(33, s);
+const dim = s => C(2, s);
+const modeLabel = { probe: green('PROBE'), rover: yellow('ROVER') };
+const userLabel = cyan('User');
+
+const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+const ask = () => new Promise(resolve => rl.question(`${userLabel}: `, resolve));
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// CLI Interface
+// Handlers
 // ═══════════════════════════════════════════════════════════════════════════════
-
-const rl = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout,
-});
-
-function print(msg) {
-  process.stdout.write(msg + '\n');
-}
-
-async function askQuestion() {
-  return new Promise((resolve) => {
-    rl.question('User: ', (answer) => {
-      resolve(answer);
-    });
-  });
-}
 
 async function runQuery(query) {
-  let responseBuffer = '';
-  let waitingForResponse = false;
+  chatHistory.push({ role: "user", content: query });
+  let response = '';
 
   try {
-    for await (const chunk of sysAgent.stream(query, currentMode)) {
-      // Tool call - print name and params
-      if (chunk?.choices?.[0]?.delta?.tool_calls) {
-        const tc = chunk.choices[0].delta.tool_calls[0];
-        const params = Object.entries(tc.args || {})
+    for await (const chunk of sysAgent.stream(chatHistory, mode)) {
+      const delta = chunk?.choices?.[0]?.delta;
+
+      if (delta?.tool_calls) {
+        const tc = delta.tool_calls[0];
+        const args = Object.entries(tc.args || {})
           .map(([k, v]) => `${k}=${typeof v === 'string' ? v : JSON.stringify(v)}`)
           .join(', ');
-        print(`${tc.name}(${params})`);
-
-        // After report tool, next content is the response
-        if (tc.name === 'report') {
-          waitingForResponse = true;
-        }
+        console.log(dim(`${tc.name}(${args})`));
       }
-
-      // Content - buffer only after report tool
-      if (chunk?.choices?.[0]?.delta?.content) {
-        const content = chunk.choices[0].delta.content;
-        if (waitingForResponse) {
-          responseBuffer += content;
-          waitingForResponse = false;
-        }
-      }
+      if (delta?.content) response = delta.content;  // overwrite — last chunk is output.md
     }
 
-    // Print response
-    if (responseBuffer) {
-      print(`${currentMode}: ${responseBuffer}`);
+    if (response) {
+      console.log(`${modeLabel[mode]}:`);
+      console.log(marked.parse(response));
+      chatHistory.push({ role: "assistant", content: response });
     } else {
-      print(`${currentMode}: (no output)`);
+      console.log(`${modeLabel[mode]}: (no output)`);
     }
-  } catch (error) {
-    print(`Error: ${error.message}`);
+  } catch (e) {
+    console.log(`Error: ${e.message}`);
   }
 
-  // Print stats
+  // Stats
   const stats = sysAgent.getStats();
   const total = stats.vectorHits + stats.webRequests;
   if (total > 0) {
-    const hitRate = Math.round((stats.vectorHits / total) * 100);
-    print(`[Cache: ${hitRate}% (${stats.vectorHits}/${total})]`);
+    console.log(`[Cache: ${Math.round((stats.vectorHits / total) * 100)}% (${stats.vectorHits}/${total})]`);
   }
   sysAgent.resetStats();
 }
 
-function handleMode(command) {
-  const parts = command.toLowerCase().replace('/', '').trim().split(/\s+/);
-  const action = parts[0];
-  const modeArg = parts[1];
-
-  if (action === 'mode' && !modeArg) {
-    print(`Current mode: ${currentMode}`);
-    print('  probe: fast search with minimal prompt');
-    print('  rover: in-depth search with compose/refine pipeline');
-    print('Usage: /mode probe, /mode rover');
-  } else if (action === 'mode' && modeArg === 'probe') {
-    currentMode = 'probe';
-    print('Switched to Probe mode (fast, minimal prompt)');
-  } else if (action === 'mode' && modeArg === 'rover') {
-    currentMode = 'rover';
-    print('Switched to Rover mode (in-depth, full pipeline)');
-  } else {
-    print('Usage: /mode, /mode probe, or /mode rover');
+function handleMode(cmd) {
+  const [, arg] = cmd.trim().split(/\s+/);
+  if (!arg) {
+    console.log(`Current mode: ${mode}\n  probe: fast search\n  rover: in-depth research`);
+    return;
   }
+  if (arg === 'probe' || arg === 'rover') {
+    mode = arg;
+    console.log(`Switched to ${mode === 'probe' ? 'Probe' : 'Rover'} mode`);
+    return;
+  }
+  console.log('Usage: /mode, /mode probe, /mode rover');
 }
 
-async function handleReset(command) {
-  const arg = command.split(' ')[1]?.toLowerCase();
-
-  if (arg === 'db') {
-    print('Clearing vector DB...');
-    await sysAgent.resetVectorDB();
-    print('Vector DB cleared.');
-  } else if (arg === 'prompts') {
-    print('Resetting prompts to default...');
-    sysAgent.resetPrompts();
-    print('Prompts reset.');
-  } else if (arg === 'all') {
-    print('Resetting everything...');
-    await sysAgent.resetVectorDB();
-    sysAgent.resetPrompts();
-    print('All reset complete.');
+async function handleReset(cmd) {
+  const [, arg] = cmd.trim().split(/\s+/);
+  const actions = {
+    db:      () => sysAgent.resetVectorDB().then(() => 'Vector DB cleared.'),
+    prompts: () => (sysAgent.resetPrompts(), 'Prompts reset.'),
+    all:     () => sysAgent.resetVectorDB().then(() => (sysAgent.resetPrompts(), 'All reset.')),
+  };
+  if (actions[arg]) {
+    const msg = await actions[arg]();
+    console.log(msg);
   } else {
-    print('Usage: /reset [db|prompts|all]');
+    console.log('Usage: /reset [db|prompts|all]');
   }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Main Loop
+// Main
 // ═══════════════════════════════════════════════════════════════════════════════
 
-print('═══════════════════════════════════════════════════════════════');
-print('          EVPAgent - Ask questions no one ever asked');
-print('═══════════════════════════════════════════════════════════════');
-print('Commands: /mode | /reset | /exit\n');
+// Banner — clean, minimal
+const blue = s => C(34, s);
 
-async function main() {
-  while (true) {
-    const input = await askQuestion();
-    const trimmed = input.trim();
+console.log(blue('─'.repeat(64)));
+console.log(bold('Wikipedia Agent'));
+console.log(dim('A personal research assistant for Wikipedia'));
+console.log();
+console.log('  Ask questions no one ever asked');
+console.log();
+console.log(blue('Commands'));
+console.log(dim('  /mode            Switch between probe (fast) and rover (in-depth)'));
+console.log(dim('  /mode probe       Direct search with Wikipedia tools'));
+console.log(dim('  /mode rover       Full pipeline: compose → search → refine'));
+console.log(dim('  /reset           Clear vector database, prompts, or all'));
+console.log(dim('  /reset db         Delete cached Wikipedia content'));
+console.log(dim('  /reset prompts     Restore prompts to default'));
+console.log(dim('  /exit             Exit'));
+console.log();
 
-    if (!trimmed) continue;
-
-    // Handle commands
-    if (trimmed.toLowerCase() === '/exit') {
-      print('Goodbye!');
-      break;
-    }
-
-    if (trimmed.toLowerCase().startsWith('/mode')) {
-      handleMode(trimmed);
-      print('');
-      continue;
-    }
-
-    if (trimmed.toLowerCase().startsWith('/reset')) {
-      await handleReset(trimmed);
-      print('');
-      continue;
-    }
-
-    await runQuery(trimmed);
-    print('');
-  }
-
+// Handle Ctrl+C gracefully
+process.on('SIGINT', () => {
+  console.log(dim('\nGoodbye!'));
   rl.close();
-}
+  process.exit(0);
+});
 
-main();
+// Run main loop
+(async () => {
+  for (;;) {
+    const input = (await ask()).trim();
+    if (!input) continue;
+
+    const cmd = input.toLowerCase();
+
+    if (cmd === '/exit') { console.log(dim('Goodbye!')); break; }
+    if (cmd.startsWith('/mode'))  { handleMode(input);  continue; }
+    if (cmd.startsWith('/reset')) { await handleReset(input); continue; }
+
+    await runQuery(input);
+  }
+  rl.close();
+  process.exit(0);
+})();

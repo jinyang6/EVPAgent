@@ -19,6 +19,13 @@ turnmarkdownService.addRule('removeCitations', {
 });
 
 async function fetchUrl({ url }) {
+  // Check for unsupported content types
+  const unsupportedExts = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.zip', '.rar'];
+  const hasUnsupportedExt = unsupportedExts.some(ext => url.toLowerCase().includes(ext));
+  if (hasUnsupportedExt) {
+    return `Error: This URL points to a non-text content (PDF, DOC, etc.). Only websites that can be parsed to text are supported. Please provide a different URL or use web_search to find a text-based source.`;
+  }
+
   try {
     const response = await axios.get(url, {
       headers: {
@@ -50,6 +57,11 @@ async function fetchUrl({ url }) {
       content = $('main').html() || $('article').html() || $('body').html();
     }
 
+    // Check if content was found
+    if (!content) {
+      return `Error: Could not extract content from ${url}. The page may not have readable content.`;
+    }
+
     // Convert to markdown
     let markdown = turnmarkdownService.turndown(content);
 
@@ -61,16 +73,17 @@ async function fetchUrl({ url }) {
       .replace(/\*\*References\*\*[\s\S]*?$/i, '')  // Remove references section
       .trim();
 
-    // Limit to ~8000 chars for token efficiency
-    const maxChars = 8000;
-    if (markdown.length > maxChars) {
-      markdown = markdown.slice(0, maxChars) + '\n\n[... content truncated ...]';
-    }
+    // // Limit to ~8000 chars for token efficiency
+    // const maxChars = 8000;
+    // if (markdown.length > maxChars) {
+    //   markdown = markdown.slice(0, maxChars) + '\n\n[... content truncated ...]';
+    // }
 
     return `# ${title}\n**Source:** ${url}\n\n${markdown}`;
 
   } catch (error) {
-    return `Error fetching URL ${url}: ${error.message}`;
+    const errorMessage = error?.message || 'Unknown error occurred';
+    return `Error fetching URL ${url}: ${errorMessage}`;
   }
 }
 
@@ -86,6 +99,8 @@ When to use:
 - To get complete information from a specific webpage
 
 Usage tips:
+- Only use for websites that can be parsed to text (HTML pages)
+- Do NOT use for PDFs, DOCs, or other non-text content
 - Use a search tool first to find the right URL
 - One fetch per important source, not multiple
 - Check the title to confirm it's the right page
@@ -94,7 +109,6 @@ Usage tips:
 Returns:
 - Page title as header (# Title)
 - Main content in clean Markdown
-- Content is truncated to ~8000 chars if too long
 
 Input: URL to fetch`,
     schema: z.object({

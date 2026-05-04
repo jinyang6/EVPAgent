@@ -35,6 +35,8 @@
     "dotenv": "latest",
     "duck-duck-scrape": "latest",
     "langchain": "latest",
+    "marked": "^15.0.12",
+    "marked-terminal": "^7.3.0",
     "turndown": "latest",
     "zod": "latest"
   },

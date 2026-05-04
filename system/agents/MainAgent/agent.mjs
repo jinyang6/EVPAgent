@@ -2,32 +2,44 @@ import { AgentState } from "./state.mjs"
 import { createModel } from "../llm/api/OpenAICompatible.mjs";
 import { tools } from "./tools/index.mjs"
 
-/**
- * This file contains the definitions
- * of the main agent node.
- */
+// ═══════════════════════════════════════════════════════════════════════════════
+// Main Agent — LLM Node
+// ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * This function is the main agent node's 
- * callback function, used in graph.ts to
- * define the workflow.
- * It takes the state/data and send 
- * the chat messages to the llm and 
- * returns the llm's response to the framework.
- * @param {typeof AgentState} state The state of the graph, containing data to store/process
- * @param {Object} config The configuration of the provider, for example
-   
-  {
-       baseURL: "https://openrouter.ai/api/v1",
-       apiKey: "sk-xxx...",
-       modelId: "google/gemini-3-flash-preview"
-  }
- * @returns The response of the llm, to be appended to chat history by framework using reducer
+ * Call the LLM with the current agent state and return its response.
+ *
+ * Used by mainGraph as the "agent" node callback. Reads messages from state,
+ * injects the system prompt, binds available tools, and streams the result
+ * back to the graph for appending to chat history.
+ *
+ * Tool filtering:
+ * - `report` is always enabled regardless of config
+ * - Other tools (searchWikipedia, fetchWikiPage, fetch_url) are controlled by the
+ *   `config.configurable.tools` boolean map, e.g.:
+ *   `{ searchWikipedia: true, fetchWikiPage: false }`
+ * - If `tools` is not set (null), all tools are enabled
+ *
+ * @param {typeof AgentState} state — Graph state containing messages array
+ * @param {Object} config — Runtime configuration passed by LangGraph
+ * @param {Object} config.configurable — LLM and tool settings
+ * @param {string} config.configurable.baseURL — API base URL
+ * @param {string} config.configurable.apiKey — API key
+ * @param {string} config.configurable.modelId — Model identifier
+ * @param {string} [config.configurable.systemPrompt] — System prompt string
+ * @param {Object|null} [config.configurable.tools] — Boolean map for tool filtering
+ * @returns {Promise<{ messages: Array }>} LLM response to append to messages
  */
 export async function callModel(state, config) {
      
     const messages = state.messages;
-    const { baseURL, apiKey, modelId, systemPrompt } = config.configurable;
+    const { baseURL, apiKey, modelId, systemPrompt, tools: allowedTools } = config.configurable;
+    const ALWAYS_ENABLED = ['report'];
+
+    // Filter tools: report always enabled, others controlled by boolean map
+    const activeTools = allowedTools
+      ? tools.filter(t => ALWAYS_ENABLED.includes(t.name) || allowedTools[t.name] === true)
+      : tools;
 
     // Inject system prompt as first message
     const fullMessages = [
@@ -40,7 +52,7 @@ export async function callModel(state, config) {
         baseURL,
         apiKey,
         modelId
-    }).bindTools(tools);
+    }).bindTools(activeTools);
 
     // Inference
     const response = await provider.invoke(fullMessages);
