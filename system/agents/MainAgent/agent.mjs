@@ -1,5 +1,5 @@
 import { AgentState } from "./state.mjs"
-import { createModel } from "../llm/api/OpenAICompatible.mjs";
+import { createModel } from "../llm/api/OpenAICompatible.mjs"
 import { tools } from "./tools/index.mjs"
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -54,9 +54,7 @@ export async function callModel(state, config) {
         modelId
     }).bindTools(activeTools);
 
-    // Inference
     const response = await provider.invoke(fullMessages);
-    
     return { messages: [ response ] };
     
 };

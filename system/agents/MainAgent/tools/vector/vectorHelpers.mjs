@@ -266,44 +266,6 @@ export async function searchVectorDB(query, k = 3, filterType) {
 }
 
 /**
- * Store a wikipediaSearch result to the vector database
- * Stores the entire formatted search result as a single record
- * @param {string} query - The original search query
- * @param {string} fullResultText - The complete formatted search result text
- * @returns {Promise<void>}
- */
-export async function upsertWikipediaSearch(query, fullResultText) {
-  try {
-    const tbl = await getTable();
-    const embeddings = getEmbeddings();
-
-    // Generate ID based on query
-    const id = generateDocId("wikipediaSearch", query, "", "search_result");
-
-    // Build search URL that reproduces the search in browser
-    const searchUrl = `https://en.wikipedia.org/w/index.php?search=${encodeURIComponent(query)}`;
-
-    // Embed the entire search result as one text
-    const vector = await embeddings.embedQuery(fullResultText);
-
-    // Store as single record
-    await tbl.add([{
-      id,
-      vector,
-      text: fullResultText,
-      type: "wikipediaSearch",
-      article: query,
-      section: "",
-      url: searchUrl,
-      lastEdited: new Date().toISOString(),
-    }]);
-  } catch (error) {
-    // Don't throw - caching failure shouldn't break the tool
-    console.error(`[VectorDB::upsertWikipediaSearch] failed: ${error.message}`);
-  }
-}
-
-/**
  * Store a wikiPage (overview or section) to the vector database
  * Stores the entire content as a single vector record for semantic search
  * @param {string} page - Article title

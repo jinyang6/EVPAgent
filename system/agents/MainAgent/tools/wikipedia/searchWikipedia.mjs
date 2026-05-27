@@ -1,6 +1,7 @@
 import { tool } from "@langchain/core/tools";
 import z from "zod";
 import { wikiRequest, reportWikiResult, WIKI_USER_AGENT } from "./wikipediaHelpers.mjs";
+import { searchVectorDB, formatCachedSearchResults } from "../vector/vectorHelpers.mjs";
 
 /**
  * Search Wikipedia using MediaWiki Action API
@@ -9,38 +10,52 @@ import { wikiRequest, reportWikiResult, WIKI_USER_AGENT } from "./wikipediaHelpe
 const wikipediaSearchSchema = z.object({
   query: z.string().describe('The search query to find relevant Wikipedia articles'),
   limit: z.number().optional().default(5).describe('Number of results: 3 for simple facts, 5 for default, 10+ for comprehensive research'),
-  type: z.enum(['text', 'nearmatch']).optional().default('text')
-    .describe('Type of search: text (full text) or nearmatch'),
 });
 
-async function wikipediaSearch({ query, limit = 5, type = 'text' }) {
+async function wikipediaSearch({ query, limit = 5 }) {
   try {
-    const data = await wikiRequest("query", {
-      list: "search",
-      srsearch: query,
-      srnamespace: "0",
-      srlimit: String(limit),
-      srwhat: type,
-      srprop: "size|wordcount|timestamp|snippet|titlesnippet",
-      utf8: "1",
-    });
+    // Wikipedia API search + vector DB cache queries in parallel
+    const [wikiData, cachedOverviews, cachedSections] = await Promise.all([
+      wikiRequest("query", {
+        list: "search",
+        srsearch: query,
+        srlimit: String(limit),
+        srprop: "timestamp|snippet",
+        utf8: "1",
+      }),
+      searchVectorDB(query, limit, "pageOverview"),
+      searchVectorDB(query, limit, "pageSection"),
+    ]);
 
-    const queryData = data?.query;
+    const queryData = wikiData?.query;
+    const hasWikiResults = queryData?.search && queryData.search.length > 0;
+    const cachedResults = [...cachedOverviews, ...cachedSections];
 
-    if (!queryData?.search || queryData.search.length === 0) {
+    if (!hasWikiResults && cachedResults.length === 0) {
       return `Wikipedia search for "${query}" returned no results.`;
     }
 
-    let output = `Wikipedia Search Results for "${query}":\n\n`;
+    let output = "";
 
-    queryData.search.forEach((item, index) => {
-      const articleUrl = `https://en.wikipedia.org/wiki/${encodeURIComponent(item.title.replace(/ /g, '_'))}`;
-      const snippet = item.snippet?.replace(/<[^>]*>/g, '') || 'No preview available';
+    // Wikipedia search results
+    if (hasWikiResults) {
+      output += `Wikipedia Search Results for "${query}":\n\n`;
 
-      output += `[${index + 1}] ${item.title}\n`;
-      output += `${articleUrl}\n`;
-      output += `${snippet}\n\n`;
-    });
+      queryData.search.forEach((item, index) => {
+        const articleUrl = `https://en.wikipedia.org/wiki/${encodeURIComponent(item.title.replace(/ /g, '_'))}`;
+        const snippet = item.snippet?.replace(/<[^>]*>/g, '') || 'No preview available';
+
+        output += `[${index + 1}] ${item.title}\n`;
+        output += `${articleUrl}\n`;
+        output += `${snippet}\n\n`;
+      });
+    }
+
+    // Related cached content from vector DB
+    if (cachedResults.length > 0) {
+      output += "\n## Related cached content\n\n";
+      output += formatCachedSearchResults(cachedResults);
+    }
 
     reportWikiResult('searchWikipedia', { query, limit }, output);
     return output.trim();
@@ -72,7 +87,6 @@ Parameters:
   - insource: for article text search (e.g., insource:"olivine" "water")
   - incategory: for category search (e.g., incategory:"Space exploration")
 - limit (optional, default=5): Number of results (3=facts, 5=default, 10+=research)
-- type (optional): 'text' or 'nearmatch'
 
 Returns: Numbered list of matching articles with titles, URLs, and snippets.`,
     schema: wikipediaSearchSchema,

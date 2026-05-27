@@ -1,8 +1,12 @@
 #!/usr/bin/env node
 
 // src/cli.js
-import "dotenv/config";
+import { config } from "dotenv";
+import { resolve } from "path";
 import readline from "readline";
+import { spawn } from "child_process";
+import { fileURLToPath as fileURLToPath2 } from "url";
+import { dirname as dirname2, join as join15 } from "path";
 import { marked } from "marked";
 import { markedTerminal } from "marked-terminal";
 
@@ -192,9 +196,9 @@ Your task:
 IMPORTANT: 
 - MUST follow the above steps
 - After calling combinePrompts, simply return a message saying "Done" - do NOT call any more tools.`;
-async function callModel(state, config) {
+async function callModel(state, config2) {
   const messages = state.messages;
-  const { baseURL, apiKey, modelId } = config.configurable;
+  const { baseURL, apiKey, modelId } = config2.configurable;
   const provider = createModel({
     baseURL,
     apiKey,
@@ -453,8 +457,8 @@ Analysis criteria:
 - Should add new prompts (Rephrase, Loop) make generic topic searches better?
 
 After finishing your analysis and any prompt changes, simply end your turn. Do NOT call any more tools.`;
-async function callModel2(state, config) {
-  const { baseURL, apiKey, modelId } = config.configurable;
+async function callModel2(state, config2) {
+  const { baseURL, apiKey, modelId } = config2.configurable;
   const messages = state.messages;
   const provider = createModel({
     baseURL,
@@ -465,24 +469,27 @@ async function callModel2(state, config) {
     { role: "system", content: REFINE_SYSTEM_PROMPT },
     ...messages.length > 0 ? messages : [{ role: "user", content: "Please analyze the session and refine prompts as needed." }]
   ];
-  const response = await provider.invoke(fullMessages);
+  let response;
+  try {
+    response = await provider.invoke(fullMessages);
+  } catch (e) {
+    console.error("[PromptRefineAgent] LLM invoke failed:", e.message);
+    response = { role: "assistant", content: "Refine phase skipped \u2014 LLM unavailable." };
+  }
   return { messages: [response] };
 }
 
 // system/agents/PromptRefineAgent/graph.mjs
 import { START as START2, END as END2 } from "@langchain/langgraph";
 var refineGraph = new StateGraph2(RefineState).addNode("agent", callModel2).addNode("tools", toolNode2).addEdge(START2, "agent").addConditionalEdges("agent", (state) => {
-  const messages = state.messages;
-  const lastMessage = messages[messages.length - 1];
-  const toolCalls = "tool_calls" in lastMessage ? lastMessage.tool_calls : [];
-  if (toolCalls.length > 0) {
+  const lastMessage = state.messages?.[state.messages.length - 1];
+  if (lastMessage?.tool_calls?.length > 0) {
     return "tools";
   }
   return END2;
 }).addEdge("tools", "agent").compile();
 
 // system/agents/MainAgent/graph.mjs
-import "dotenv/config";
 import { StateGraph as StateGraph3 } from "@langchain/langgraph";
 
 // system/agents/MainAgent/state.mjs
@@ -557,80 +564,30 @@ function parseWikitext(wikitext) {
     return `[${url} ${display}]`;
   });
 }
-
-// system/agents/MainAgent/tools/wikipedia/searchWikipedia.mjs
-var wikipediaSearchSchema = z10.object({
-  query: z10.string().describe("The search query to find relevant Wikipedia articles"),
-  limit: z10.number().optional().default(5).describe("Number of results: 3 for simple facts, 5 for default, 10+ for comprehensive research"),
-  type: z10.enum(["text", "nearmatch"]).optional().default("text").describe("Type of search: text (full text) or nearmatch")
-});
-async function wikipediaSearch({ query, limit = 5, type = "text" }) {
+async function fetchWikiImageInfo(fileTitle) {
   try {
+    const title = fileTitle.startsWith("File:") ? fileTitle : `File:${fileTitle}`;
     const data = await wikiRequest("query", {
-      list: "search",
-      srsearch: query,
-      srnamespace: "0",
-      srlimit: String(limit),
-      srwhat: type,
-      srprop: "size|wordcount|timestamp|snippet|titlesnippet",
-      utf8: "1"
+      prop: "imageinfo",
+      iiprop: "url",
+      titles: title
     });
-    const queryData = data?.query;
-    if (!queryData?.search || queryData.search.length === 0) {
-      return `Wikipedia search for "${query}" returned no results.`;
-    }
-    let output = `Wikipedia Search Results for "${query}":
-
-`;
-    queryData.search.forEach((item, index) => {
-      const articleUrl = `https://en.wikipedia.org/wiki/${encodeURIComponent(item.title.replace(/ /g, "_"))}`;
-      const snippet = item.snippet?.replace(/<[^>]*>/g, "") || "No preview available";
-      output += `[${index + 1}] ${item.title}
-`;
-      output += `${articleUrl}
-`;
-      output += `${snippet}
-
-`;
-    });
-    reportWikiResult("searchWikipedia", { query, limit }, output);
-    return output.trim();
+    const pages = data?.query?.pages;
+    if (!pages) return null;
+    const page = Object.values(pages)[0];
+    if (!page) return null;
+    const info = page.imageinfo?.[0];
+    if (!info?.url) return null;
+    return {
+      title: page.title,
+      url: info.url,
+      descriptionurl: info.descriptionurl
+    };
   } catch (error) {
-    if (error.response?.status === 429) {
-      return `Wikipedia search rate limited. Please wait and try again.`;
-    }
-    return `Wikipedia search for "${query}" failed: ${error.message}`;
+    console.error(`[fetchWikiImageInfo] failed for "${fileTitle}":`, error.message);
+    return null;
   }
 }
-var searchWikipediaTool = tool10(
-  wikipediaSearch,
-  {
-    name: "searchWikipedia",
-    description: `Search Wikipedia for relevant articles by query.
-
-When to use:
-- Use when you need to FIND which Wikipedia article to read
-- Use BEFORE fetchWikiPage to locate the right page
-- Use for: fact-checking, finding articles, locating sources
-
-Parameters:
-- query (required): Search query. Supports operators:
-  - "exact phrase" for exact match
-  - AND / OR / NOT for boolean logic (e.g., "Mars AND ocean NOT atmosphere")
-  - intitle: for title-only search (e.g., intitle:"Curiosity rover")
-  - insource: for article text search (e.g., insource:"olivine" "water")
-  - incategory: for category search (e.g., incategory:"Space exploration")
-- limit (optional, default=5): Number of results (3=facts, 5=default, 10+=research)
-- type (optional): 'text' or 'nearmatch'
-
-Returns: Numbered list of matching articles with titles, URLs, and snippets.`,
-    schema: wikipediaSearchSchema
-  }
-);
-
-// system/agents/MainAgent/tools/wikipedia/fetchWikiPage.mjs
-import { tool as tool11 } from "@langchain/core/tools";
-import z11 from "zod";
 
 // system/agents/MainAgent/tools/vector/vectorHelpers.mjs
 import path from "node:path";
@@ -796,6 +753,129 @@ async function upsertWikiPage(page, section, content, sectionIndex = 0) {
     console.error(`[VectorDB::upsertWikiPage] failed: ${error.message}`);
   }
 }
+function formatCachedSearchResults(cachedResults) {
+  let output = "[Cache hit] Found relevant content:\n\n";
+  const grouped = {
+    wikipediaSearch: [],
+    pageOverview: [],
+    pageSection: []
+  };
+  for (const result of cachedResults) {
+    const type = result.metadata?.type || "unknown";
+    if (grouped[type]) {
+      grouped[type].push(result);
+    }
+  }
+  if (grouped.wikipediaSearch.length > 0) {
+    output += "## Search Results (from cache)\n";
+    for (const r of grouped.wikipediaSearch) {
+      const meta = r.metadata;
+      output += `[${meta.article}] ${meta.url}
+`;
+      output += `${r.document.slice(0, 200)}...
+
+`;
+    }
+  }
+  if (grouped.pageOverview.length > 0 || grouped.pageSection.length > 0) {
+    output += "## Page Content (from cache)\n";
+    for (const r of [...grouped.pageOverview, ...grouped.pageSection]) {
+      const meta = r.metadata;
+      const sectionNote = meta.section ? ` (section: ${meta.section})` : "";
+      output += `**${meta.article}**${sectionNote}
+`;
+      output += `Source: ${meta.url}
+`;
+      output += `${r.document.slice(0, 300)}...
+
+`;
+    }
+  }
+  return output;
+}
+
+// system/agents/MainAgent/tools/wikipedia/searchWikipedia.mjs
+var wikipediaSearchSchema = z10.object({
+  query: z10.string().describe("The search query to find relevant Wikipedia articles"),
+  limit: z10.number().optional().default(5).describe("Number of results: 3 for simple facts, 5 for default, 10+ for comprehensive research")
+});
+async function wikipediaSearch({ query, limit = 5 }) {
+  try {
+    const [wikiData, cachedOverviews, cachedSections] = await Promise.all([
+      wikiRequest("query", {
+        list: "search",
+        srsearch: query,
+        srlimit: String(limit),
+        srprop: "timestamp|snippet",
+        utf8: "1"
+      }),
+      searchVectorDB(query, limit, "pageOverview"),
+      searchVectorDB(query, limit, "pageSection")
+    ]);
+    const queryData = wikiData?.query;
+    const hasWikiResults = queryData?.search && queryData.search.length > 0;
+    const cachedResults = [...cachedOverviews, ...cachedSections];
+    if (!hasWikiResults && cachedResults.length === 0) {
+      return `Wikipedia search for "${query}" returned no results.`;
+    }
+    let output = "";
+    if (hasWikiResults) {
+      output += `Wikipedia Search Results for "${query}":
+
+`;
+      queryData.search.forEach((item, index) => {
+        const articleUrl = `https://en.wikipedia.org/wiki/${encodeURIComponent(item.title.replace(/ /g, "_"))}`;
+        const snippet = item.snippet?.replace(/<[^>]*>/g, "") || "No preview available";
+        output += `[${index + 1}] ${item.title}
+`;
+        output += `${articleUrl}
+`;
+        output += `${snippet}
+
+`;
+      });
+    }
+    if (cachedResults.length > 0) {
+      output += "\n## Related cached content\n\n";
+      output += formatCachedSearchResults(cachedResults);
+    }
+    reportWikiResult("searchWikipedia", { query, limit }, output);
+    return output.trim();
+  } catch (error) {
+    if (error.response?.status === 429) {
+      return `Wikipedia search rate limited. Please wait and try again.`;
+    }
+    return `Wikipedia search for "${query}" failed: ${error.message}`;
+  }
+}
+var searchWikipediaTool = tool10(
+  wikipediaSearch,
+  {
+    name: "searchWikipedia",
+    description: `Search Wikipedia for relevant articles by query.
+
+When to use:
+- Use when you need to FIND which Wikipedia article to read
+- Use BEFORE fetchWikiPage to locate the right page
+- Use for: fact-checking, finding articles, locating sources
+
+Parameters:
+- query (required): Search query. Supports operators:
+  - "exact phrase" for exact match
+  - AND / OR / NOT for boolean logic (e.g., "Mars AND ocean NOT atmosphere")
+  - intitle: for title-only search (e.g., intitle:"Curiosity rover")
+  - insource: for article text search (e.g., insource:"olivine" "water")
+  - incategory: for category search (e.g., incategory:"Space exploration")
+- limit (optional, default=5): Number of results (3=facts, 5=default, 10+=research)
+
+Returns: Numbered list of matching articles with titles, URLs, and snippets.`,
+    schema: wikipediaSearchSchema
+  }
+);
+
+// system/agents/MainAgent/tools/wikipedia/fetchWikiPage.mjs
+import { tool as tool11 } from "@langchain/core/tools";
+import z11 from "zod";
 
 // system/agents/MainAgent/tools/stats.mjs
 var stats = {
@@ -874,7 +954,7 @@ _Cache hit - retrieved from local vector database_`;
     let wikitext = "";
     let pageTitle = page;
     if (isSection) {
-      const data = await wikiRequest("parse", { page, prop: "wikitext", section: sectionIndex });
+      const data = await wikiRequest("parse", { page, prop: "wikitext", section: sectionIndex, redirects: "true" });
       if (!data?.parse) return `Wikipedia page "${page}" not found.`;
       wikitext = data.parse.wikitext?.["*"] || "";
       pageTitle = data.parse.title || page;
@@ -894,8 +974,8 @@ ${parseWikitext(wikitext)}`;
       return content;
     }
     const [tocData, overviewData] = await Promise.all([
-      wikiRequest("parse", { page, prop: "tocdata" }),
-      wikiRequest("parse", { page, prop: "wikitext", section: 0 })
+      wikiRequest("parse", { page, prop: "tocdata", redirects: "true" }),
+      wikiRequest("parse", { page, prop: "wikitext", section: 0, redirects: "true" })
     ]);
     if (!tocData?.parse) return `Wikipedia page "${page}" not found.`;
     sectionsData = tocData.parse.tocdata?.sections || [];
@@ -1071,17 +1151,71 @@ import z13 from "zod";
 function getOutputFile() {
   return join12(getOutputDir(), "output.md");
 }
+function getFileTypeFromFormat(ext) {
+  const format = ext.replace(/^\./, "").trim().toLowerCase();
+  const formats = {
+    video: ["ogv", "mp4", "webm", "avi", "mov", "mkv", "wmv"],
+    audio: ["ogg", "mp3", "wav", "m4a", "flac", "aac", "oga", "opus"],
+    image: ["jpg", "jpeg", "png", "gif", "webp", "svg", "bmp", "tiff", "tif"]
+  };
+  return Object.keys(formats).find((key) => formats[key].includes(format)) || "unknown";
+}
+function renderMedia({ title, url, descriptionurl }, description) {
+  const caption = description || title.replace(/^File:/, "").replace(/_/g, " ");
+  const ext = url.match(/\.(\w+)$/i)?.[1] || "";
+  const type = getFileTypeFromFormat(ext);
+  const isVideo = type === "video";
+  const isAudio = type === "audio";
+  const isImage = type === "image";
+  let mediaTag;
+  if (isVideo) {
+    mediaTag = `<video src="${url}" controls style="width:100%;height:auto;display:block;margin:0 auto"></video>`;
+  } else if (isAudio) {
+    mediaTag = `<audio src="${url}" controls style="display:block;width:300px;max-width:100%;margin:0 auto"></audio>`;
+  } else if (isImage) {
+    mediaTag = `<img src="${url}" style="width:100%;height:auto;display:block;margin:0 auto">`;
+  } else {
+    mediaTag = `<a href="${url}" target="_blank" rel="noopener">Download ${caption}</a>`;
+  }
+  const sep = '<span style="display:inline-block;width:1px;height:0.85em;background:#bbb;vertical-align:middle;margin:0 0.25em"></span>';
+  const credit = `<small><a href="${descriptionurl}" target="_blank" rel="noopener">Wikimedia</a></small>`;
+  return [
+    '<figure style="max-width:70%;margin:1.5em auto;text-align:center;overflow:hidden">',
+    `  ${mediaTag}`,
+    `  <figcaption style="margin-top:0.5em;font-size:0.9em;color:#555;text-align:justify;word-break:break-word;overflow-wrap:break-word">`,
+    `    ${caption}${sep}${credit}`,
+    `  </figcaption>`,
+    "</figure>"
+  ].join("\n");
+}
 var reportTool = tool13(
-  async ({ searchSuccess, response }) => {
+  async ({ searchSuccess, items }) => {
     const promptsDir = getUserPromptsDir();
     const manifestPath = join12(promptsDir, "session_manifest.json");
-    if (response) {
+    if (items && items.length > 0) {
       const outputDir = getOutputDir();
       const outputFile = getOutputFile();
       if (!existsSync11(outputDir)) {
         mkdirSync(outputDir, { recursive: true });
       }
-      writeFileSync4(outputFile, response, "utf-8");
+      const mediaIndices = [];
+      items.forEach((item, i) => {
+        if (item.type === "media") mediaIndices.push(i);
+      });
+      const resolved = await Promise.all(
+        mediaIndices.map((i) => fetchWikiImageInfo(items[i].content))
+      );
+      const parts = [];
+      let ri = 0;
+      for (const item of items) {
+        if (item.type === "markdown") {
+          parts.push(item.content);
+        } else {
+          const info = resolved[ri++];
+          parts.push(info ? renderMedia(info, item.description) : `> Media not found: \`${item.content}\``);
+        }
+      }
+      writeFileSync4(outputFile, parts.join("\n\n"), "utf-8");
     }
     if (!existsSync11(manifestPath)) {
       return "Error: session_manifest.json not found";
@@ -1091,16 +1225,97 @@ var reportTool = tool13(
       manifest.searchSuccess = searchSuccess;
       manifest.timestamp = (/* @__PURE__ */ new Date()).toISOString();
       writeFileSync4(manifestPath, JSON.stringify(manifest, null, 2), "utf-8");
+      const itemCount = items?.length || 0;
+      const mediaCount = items?.filter((i) => i.type === "media").length || 0;
+      return `Report saved (${itemCount} items, ${mediaCount} media).`;
     } catch (error) {
       return `Error: ${error.message}`;
     }
   },
   {
     name: "report",
-    description: "Report search success status and optionally save final response to output.md.",
+    description: `Finalize the research session and write the assembled article to output.md.
+
+When to use:
+- Call exactly ONCE at the end of every research session
+- Call after you have gathered all content and are ready to produce the final article
+- Must be called even if the search was unsuccessful (set searchSuccess: false)
+
+Parameters:
+- searchSuccess (required): Whether the search produced useful findings
+- items (optional, default=[]): Ordered list of content blocks that form the article:
+  - type "markdown": A section of the article in Markdown format
+  - type "media": A Wikipedia/Commons file title (e.g., "BBH gravitational lensing of gw150914.webm").
+    Optionally include a "description" field with an HTML caption for the media figure.
+    When provided, this custom caption replaces the plain file-name fallback.
+
+The tool resolves media file titles to real URLs via the Wikipedia API and
+renders them as clean HTML figures with captions and source links. Markdown
+sections are concatenated in order with media placed inline.
+
+Returns: Confirmation message with item and media count.`,
     schema: z13.object({
       searchSuccess: z13.boolean().describe("Whether the search was successful"),
-      response: z13.string().optional().describe("Final response to save to output.md")
+      items: z13.array(z13.object({
+        type: z13.enum(["markdown", "media"]).describe("Content type: 'markdown' for article text, 'media' for a file title"),
+        content: z13.string().describe("For markdown: article section in Markdown. For media: file title, e.g. 'Example.jpg' or 'BBH gravitational lensing of gw150914.webm'."),
+        description: z13.string().describe("Optional HTML description/caption for media items only (ignored for markdown). When provided, this replaces the plain file-name caption under the media figure. Use to supply a custom, informative caption tailored to the article context.").optional()
+      })).describe("Ordered list of content items that form the final article").optional().default([])
+    })
+  }
+);
+
+// system/agents/MainAgent/tools/delegation/deepSearch.mjs
+import { tool as tool14 } from "@langchain/core/tools";
+import z14 from "zod";
+var _rover = null;
+function getRover() {
+  if (!_rover) _rover = new SysAgent();
+  return _rover;
+}
+var deepSearchTool = tool14(
+  async ({ query }, config2) => {
+    let result = "";
+    for await (const chunk of getRover().stream(
+      [{ role: "user", content: query }],
+      "rover",
+      { signal: config2?.signal }
+    )) {
+      const content = chunk?.choices?.[0]?.delta?.content;
+      if (content) result = content;
+    }
+    if (result) {
+      getRover().resetSession();
+      return result;
+    }
+    const success = getRover().wasSearchSuccessful();
+    getRover().resetSession();
+    return success ? "Search succeeded but no report was generated." : "Search failed. No report was generated.";
+  },
+  {
+    name: "deepSearch",
+    description: `Deep search a complex question that requires combining information from multiple sources into a formal report.
+
+When to use:
+- Use when the question demands a comprehensive, structured report with specific requirements
+- Use for focused, academically-oriented topics that need formal research synthesis
+- Use when the answer requires cross-referencing multiple Wikipedia articles or external sources
+
+When NOT to use:
+- Do NOT use for broad, open-ended topics or casual curiosity
+- Do NOT use for simple fact lookups (e.g., "What year was X founded?")
+- Do NOT use when a single Wikipedia article section would suffice
+
+This launches the full rover pipeline (compose plan \u2192 multi-step search \u2192 refine prompts), which is slow but produces a thorough, citation-backed report. Reserve it for questions that genuinely require depth over speed.
+
+Parameters:
+- query (required): A specific, well-scoped research question. Should be precise and academic in nature (e.g., "How did Streamline Moderne architecture influence mid-century automotive design?") rather than broad or vague (e.g., "Tell me about cars").
+
+Returns: A comprehensive Markdown report synthesizing findings from multiple sources.`,
+    schema: z14.object({
+      query: z14.string().describe(
+        "A specific, well-defined research question requiring formal investigation across multiple sources. Should be focused and academic, not a broad or casual query."
+      )
     })
   }
 );
@@ -1110,14 +1325,15 @@ var tools3 = [
   searchWikipediaTool,
   fetchWikiPageTool,
   fetchUrlTool,
+  deepSearchTool,
   reportTool
 ];
 var toolNode3 = new ToolNode3(tools3);
 
 // system/agents/MainAgent/agent.mjs
-async function callModel3(state, config) {
+async function callModel3(state, config2) {
   const messages = state.messages;
-  const { baseURL, apiKey, modelId, systemPrompt, tools: allowedTools } = config.configurable;
+  const { baseURL, apiKey, modelId, systemPrompt, tools: allowedTools } = config2.configurable;
   const ALWAYS_ENABLED = ["report"];
   const activeTools = allowedTools ? tools3.filter((t) => ALWAYS_ENABLED.includes(t.name) || allowedTools[t.name] === true) : tools3;
   const fullMessages = [
@@ -1136,10 +1352,8 @@ async function callModel3(state, config) {
 // system/agents/MainAgent/graph.mjs
 import { START as START3, END as END3 } from "@langchain/langgraph";
 var mainGraph = new StateGraph3(AgentState).addNode("agent", callModel3).addNode("tools", toolNode3).addEdge(START3, "agent").addConditionalEdges("agent", (state) => {
-  const messages = state.messages;
-  const lastMessage = messages[messages.length - 1];
-  const toolCalls = "tool_calls" in lastMessage ? lastMessage.tool_calls : [];
-  if (toolCalls.length > 0) {
+  const lastMessage = state.messages?.[state.messages.length - 1];
+  if (lastMessage?.tool_calls?.length > 0) {
     return "tools";
   }
   return END3;
@@ -1247,13 +1461,13 @@ var SysAgent = class {
    * @param {string} [config.modelId] - LLM model identifier (defaults to SEARCH_MODEL_ID env)
    * @param {Object|null} [config.tools] - Boolean map for tool filtering
    */
-  constructor(config = {}) {
+  constructor(config2 = {}) {
     this.baseConfig = {
       configurable: {
-        baseURL: config.baseURL || process.env.SEARCH_MODEL_BASE_URL,
-        apiKey: config.apiKey || process.env.SEARCH_MODEL_API_KEY,
-        modelId: config.modelId || process.env.SEARCH_MODEL_ID,
-        tools: config.tools || null
+        baseURL: config2.baseURL || process.env.SEARCH_MODEL_BASE_URL,
+        apiKey: config2.apiKey || process.env.SEARCH_MODEL_API_KEY,
+        modelId: config2.modelId || process.env.SEARCH_MODEL_ID,
+        tools: config2.tools || null
         // {searchWikipedia: true, fetchWikiPage: false} — null = all enabled
       },
       recursionLimit: 100
@@ -1267,18 +1481,20 @@ var SysAgent = class {
    * Stream results as async generator
    * @param {Array<{role: string, content: string}>} messages - Chat history (CLI-maintained)
    * @param {'probe'|'rover'} mode - Workflow mode: probe (fast) or rover (in-depth)
+   * @param {Object} [opts]
+   * @param {AbortSignal} [opts.signal] - Abort signal to cancel execution
    */
-  async *stream(messages, mode2 = "probe") {
+  async *stream(messages, mode2 = "probe", { signal } = {}) {
     if (!this._initialized) await this.init();
     this.#resetSessionFiles();
-    const tools4 = mode2 === "probe" ? { searchWikipedia: true, fetchWikiPage: true, fetch_url: true } : { searchWikipedia: true, fetchWikiPage: true, fetch_url: true };
+    const tools4 = mode2 === "probe" ? { searchWikipedia: true, fetchWikiPage: true, fetch_url: true, deepSearch: true } : { searchWikipedia: true, fetchWikiPage: true, fetch_url: true };
     if (mode2 === "probe") {
-      yield* this.#runMainAgent(messages, this.#getProbePrompt(), tools4);
+      yield* this.#runMainAgent(messages, this.#getProbePrompt(), tools4, signal);
     } else {
       const userQuery = messages.findLast((m) => m.role === "user")?.content || "";
-      yield* this.#compose(userQuery);
-      yield* this.#runMainAgent([{ role: "user", content: userQuery }], this.#getRoverPrompt(), tools4);
-      yield* this.#refine();
+      yield* this.#compose(userQuery, signal);
+      yield* this.#runMainAgent([{ role: "user", content: userQuery }], this.#getRoverPrompt(), tools4, signal);
+      yield* this.#refine(signal);
     }
     const outputContent = this.#readOutputFile();
     if (outputContent) yield textChunk(outputContent);
@@ -1331,6 +1547,21 @@ var SysAgent = class {
         }
       }
     }
+  }
+  /**
+   * Check session manifest to determine if the last search was successful.
+   * @returns {boolean} True if search succeeded
+   */
+  wasSearchSuccessful() {
+    return this.#checkSearchSuccess();
+  }
+  /**
+   * Reset session files to clean state.
+   * Exposed for subagent callers (e.g., deepSearch tool) to prevent
+   * polluting the caller's session manifest and output.
+   */
+  resetSession() {
+    this.#resetSessionFiles();
   }
   // ─────────────────────────────────────────────────────────────────────────────
   // Initialization
@@ -1399,10 +1630,12 @@ var SysAgent = class {
    * Step 1: Compose dynamic system prompt (Rover only)
    * Uses PromptComposerAgent to build context-aware system prompt
    * @param {string} userQuery - The query to compose prompt for
+   * @param {AbortSignal} [signal]
    */
-  async *#compose(userQuery) {
+  async *#compose(userQuery, signal) {
     const state = { messages: [{ role: "user", content: userQuery }] };
-    const stream = await composerGraph.stream(state, this.baseConfig);
+    const config2 = { ...this.baseConfig, signal };
+    const stream = await composerGraph.stream(state, config2);
     for await (const chunk of stream) {
       yield* this.#yieldChunk(chunk);
     }
@@ -1412,18 +1645,20 @@ var SysAgent = class {
    * @param {Array<{role: string, content: string}>} messages - Messages to send as initial state
    * @param {string} systemPrompt - System prompt to use
    * @param {Object} tools - Boolean map of enabled tools
+   * @param {AbortSignal} [signal]
    */
-  async *#runMainAgent(messages, systemPrompt, tools4) {
-    const config = {
+  async *#runMainAgent(messages, systemPrompt, tools4, signal) {
+    const config2 = {
       ...this.baseConfig,
       configurable: {
         ...this.baseConfig.configurable,
         systemPrompt,
         tools: tools4
-      }
+      },
+      signal
     };
     const state = { messages };
-    const stream = await mainGraph.stream(state, config);
+    const stream = await mainGraph.stream(state, config2);
     for await (const chunk of stream) {
       yield* this.#yieldChunk(chunk);
     }
@@ -1432,11 +1667,13 @@ var SysAgent = class {
    * Step 3: Refine prompts based on search results
    * Uses PromptRefineAgent to improve Rephrase and Loop prompts
    * Only runs if search was successful
+   * @param {AbortSignal} [signal]
    */
-  async *#refine() {
+  async *#refine(signal) {
     if (!this.#checkSearchSuccess()) return;
     const state = { messages: [] };
-    const stream = await refineGraph.stream(state, this.baseConfig);
+    const config2 = { ...this.baseConfig, signal };
+    const stream = await refineGraph.stream(state, config2);
     for await (const chunk of stream) {
       yield* this.#yieldChunk(chunk);
     }
@@ -1554,11 +1791,214 @@ var SysAgent = class {
   }
 };
 
+// src/core/AgentService.mjs
+var DEFAULT_CONTEXT_LENGTH = 128e3;
+var MODELS = Object.freeze([
+  {
+    id: "probe",
+    object: "model",
+    created: 171e7,
+    // owned_by: 'evpagent',
+    name: "probe",
+    description: "General-purpose agent handling simple to complex questions. Maintains multi-turn conversation context and can fetch external sources via web_fetch when editing or researching beyond Wikipedia. For deep investigations, delegates to the rover pipeline as a subagent via deepSearch. Produces multimodal responses with embedded media (images, audio, video) from Wikipedia.",
+    supported_modalities: ["text"],
+    output_modalities: ["text"],
+    pricing: null
+  },
+  {
+    id: "rover",
+    object: "model",
+    created: 171e7,
+    // owned_by: 'evpagent',
+    name: "rover",
+    description: "Single-question deep research pipeline. Takes one question at a time, composes a dynamic research plan, performs multi-step Wikipedia-only investigation across multiple articles, and returns one complete, citation-backed report. In-depth but stateless \u2014 lacks multi-turn conversation context. Best for complex, multi-faceted, or expert-level research questions.",
+    supported_modalities: ["text"],
+    output_modalities: ["text"],
+    pricing: null
+  }
+]);
+var MODEL_MAP = Object.freeze(Object.fromEntries(MODELS.map((m) => [m.id, m])));
+function formatToolCall({ name, args }) {
+  const params = Object.entries(args || {}).map(([k, v]) => `${k}=${typeof v === "string" ? v : JSON.stringify(v)}`).join(", ");
+  return `${name}(${params})`;
+}
+function normalizeMessages(messages) {
+  if (!Array.isArray(messages)) {
+    throw Object.assign(
+      new Error("messages must be an array of { role, content }."),
+      { statusCode: 400, param: "messages" }
+    );
+  }
+  return messages.map((m) => ({
+    role: m.role || "user",
+    content: typeof m.content === "string" ? m.content : Array.isArray(m.content) ? m.content.map((p) => typeof p === "string" ? p : p.text || "").join("") : String(m.content || "")
+  }));
+}
+var AgentService = {
+  // ── Initialization ────────────────────────────────────────────────────────
+  /** Resolved context length from the provider, or null if not yet fetched */
+  _contextLength: null,
+  /**
+   * Fetch the actual context length of the configured search model
+   * from the provider's models endpoint.  Falls back to 128000 on failure.
+   *
+   * Reads SEARCH_MODEL_BASE_URL, SEARCH_MODEL_API_KEY, and SEARCH_MODEL_ID
+   * from the environment.
+   *
+   * @returns {Promise<void>}
+   */
+  async init() {
+    const baseUrl = process.env.SEARCH_MODEL_BASE_URL;
+    const apiKey = process.env.SEARCH_MODEL_API_KEY;
+    const modelId = process.env.SEARCH_MODEL_ID;
+    if (!baseUrl || !modelId) {
+      this._contextLength = DEFAULT_CONTEXT_LENGTH;
+      return;
+    }
+    try {
+      const modelsUrl = baseUrl.replace(/\/+$/, "") + "/models";
+      const response = await fetch(modelsUrl, {
+        headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+        signal: AbortSignal.timeout(5e3)
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const json = await response.json();
+      const models = json.data || json.models || [];
+      const shortId = modelId.includes("/") ? modelId.split("/").pop() : modelId;
+      const baseId = shortId.includes(":") ? shortId.split(":")[0] : shortId;
+      const match = (Array.isArray(models) ? models : []).find((m) => {
+        const id = m.id || m.name || "";
+        return id === modelId || id === shortId || id === baseId || id.endsWith("/" + shortId) || id.endsWith("/" + baseId);
+      });
+      if (match) {
+        this._contextLength = match.context_length || match.context_window || match.contextWindow || DEFAULT_CONTEXT_LENGTH;
+        console.log(`[AgentService] context_length resolved to ${this._contextLength} for ${modelId}`);
+        return;
+      }
+      console.warn(`[AgentService] model ${modelId} not found in provider listing, using default`);
+    } catch (e) {
+      console.warn(`[AgentService] could not fetch context length: ${e.message}`);
+    }
+    this._contextLength = DEFAULT_CONTEXT_LENGTH;
+  },
+  // ── Model Registry ───────────────────────────────────────────────────────
+  /**
+   * OpenAI /v1/models shape.
+   * @returns {{ object: 'list', data: Array }}
+   */
+  listModels() {
+    return { object: "list", data: this._injectContextLength(MODELS) };
+  },
+  /**
+   * Get a single model by id.
+   * @param {string} id - e.g. "probe"
+   * @returns {Object|null} Model object or null
+   */
+  getModel(id) {
+    const model = MODEL_MAP[id];
+    if (!model) return null;
+    return this._injectContextLength([model])[0];
+  },
+  /**
+   * Check whether a model id is valid.
+   * @param {string} id
+   * @returns {boolean}
+   */
+  isValidModel(id) {
+    return id in MODEL_MAP;
+  },
+  /**
+   * Map a model id to a mode. Unknown → 'probe'.
+   * @param {string} model
+   * @returns {'probe'|'rover'}
+   */
+  resolveMode(model) {
+    return MODEL_MAP[model] ? model : "probe";
+  },
+  // ── Private ──────────────────────────────────────────────────────────────
+  /**
+   * Spread the dynamic context_length into model objects.
+   * @param {Array<Object>} models
+   * @returns {Array<Object>}
+   */
+  _injectContextLength(models) {
+    const len = this._contextLength || DEFAULT_CONTEXT_LENGTH;
+    return models.map((m) => ({ ...m, context_length: len }));
+  },
+  // ── Input Validation ─────────────────────────────────────────────────────
+  /**
+   * Validate and normalize an incoming messages array.
+   * Used by the chat route before delegating to the adapter.
+   *
+   * @param {any} messages
+   * @returns {Array<{role: string, content: string}>}
+   * @throws {Error} with { statusCode, param } on invalid input
+   */
+  validateMessages(messages) {
+    return normalizeMessages(messages);
+  },
+  // ── Streaming ────────────────────────────────────────────────────────────
+  /**
+   * Stream agent execution as normalized events.
+   *
+   * Tool calls are yielded immediately.  Content chunks overwrite a buffer
+   * variable — only the last one (output.md) is yielded when the stream ends.
+   *
+   * Yields:
+   *   { type: 'tool',    text: string }  — each tool invocation (real-time)
+   *   { type: 'content', text: string }  — terminal output only (at stream end)
+   *
+   * @param {Array<{role: string, content: string}>} messages
+   * @param {'probe'|'rover'} mode
+   * @param {Object} [opts]
+   * @param {SysAgent} [opts.agent] - Reuse an existing instance (CLI keeps stats)
+   * @param {AbortSignal} [opts.signal] - Abort signal to cancel execution
+   * @returns {AsyncGenerator<{ type: string, text: string }>}
+   */
+  async *streamEvents(messages, mode2 = "probe", { agent, signal } = {}) {
+    console.log("[AgentService] streamEvents started, mode:", mode2);
+    const sysAgent2 = agent || new SysAgent();
+    const normalized = normalizeMessages(messages);
+    let content = "";
+    try {
+      for await (const chunk of sysAgent2.stream(normalized, mode2, { signal })) {
+        const delta = chunk?.choices?.[0]?.delta;
+        if (!delta) continue;
+        if (delta.tool_calls) {
+          const tc = delta.tool_calls[0];
+          yield {
+            type: "tool",
+            text: formatToolCall(tc),
+            name: tc.name,
+            args: tc.args || {}
+          };
+        }
+        if (delta.content && delta.content !== "") {
+          content = delta.content;
+        }
+      }
+    } catch (e) {
+      console.error("[AgentService] streamEvents error:", e.message, e.stack);
+      throw e;
+    }
+    console.log("[AgentService] streamEvents finished, content length:", content?.length);
+    yield {
+      type: "content",
+      text: content || "No output."
+    };
+  }
+};
+
 // src/cli.js
+config({ path: resolve(process.cwd(), ".env"), quiet: true });
+var __dirname = dirname2(fileURLToPath2(import.meta.url));
+var srcDir = __dirname.endsWith("dist") ? join15(__dirname, "..") : __dirname;
+var serverEntry = join15(srcDir, "api", "index.mjs");
 marked.use(markedTerminal());
 var sysAgent = new SysAgent();
 var mode = "probe";
 var chatHistory = [];
+var _serverProcess = null;
 var C = (code, s) => `\x1B[${code}m${s}\x1B[0m`;
 var bold = (s) => C(1, s);
 var cyan = (s) => C(36, s);
@@ -1568,19 +2008,18 @@ var dim = (s) => C(2, s);
 var modeLabel = { probe: green("PROBE"), rover: yellow("ROVER") };
 var userLabel = cyan("User");
 var rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-var ask = () => new Promise((resolve) => rl.question(`${userLabel}: `, resolve));
+var ask = () => new Promise((resolve2) => rl.question(`${userLabel}: `, resolve2));
 async function runQuery(query) {
   chatHistory.push({ role: "user", content: query });
   let response = "";
   try {
-    for await (const chunk of sysAgent.stream(chatHistory, mode)) {
-      const delta = chunk?.choices?.[0]?.delta;
-      if (delta?.tool_calls) {
-        const tc = delta.tool_calls[0];
-        const args = Object.entries(tc.args || {}).map(([k, v]) => `${k}=${typeof v === "string" ? v : JSON.stringify(v)}`).join(", ");
-        console.log(dim(`${tc.name}(${args})`));
+    for await (const event of AgentService.streamEvents(chatHistory, mode, { agent: sysAgent })) {
+      if (event.type === "tool") {
+        console.log(dim(event.text));
       }
-      if (delta?.content) response = delta.content;
+      if (event.type === "content") {
+        response = event.text;
+      }
     }
     if (response) {
       console.log(`${modeLabel[mode]}:`);
@@ -1602,13 +2041,13 @@ async function runQuery(query) {
 function handleMode(cmd) {
   const [, arg] = cmd.trim().split(/\s+/);
   if (!arg) {
-    console.log(`Current mode: ${mode}
-  probe: fast search
-  rover: in-depth research`);
+    mode = mode === "probe" ? "rover" : "probe";
+    console.log(`Switched to ${mode === "probe" ? "Probe" : "Rover"} mode`);
     return;
   }
-  if (arg === "probe" || arg === "rover") {
-    mode = arg;
+  const modeArg = arg.toLowerCase();
+  if (modeArg === "probe" || modeArg === "rover") {
+    mode = modeArg;
     console.log(`Switched to ${mode === "probe" ? "Probe" : "Rover"} mode`);
     return;
   }
@@ -1628,10 +2067,39 @@ async function handleReset(cmd) {
     console.log("Usage: /reset [db|prompts|all]");
   }
 }
+async function handleServe(cmd) {
+  if (_serverProcess) {
+    console.log(dim("API server is already running."));
+    return;
+  }
+  const [, portStr] = cmd.trim().split(/\s+/);
+  const port = portStr || process.env.API_PORT || process.env.PORT || "3456";
+  const env = { ...process.env, PORT: port };
+  try {
+    _serverProcess = spawn("node", [serverEntry], { env, stdio: "inherit" });
+    console.log(`API server starting on port ${port}\u2026`);
+    _serverProcess.on("exit", (code) => {
+      if (code !== 0 && code !== null) {
+        console.log(dim(`API server exited with code ${code}`));
+      }
+      _serverProcess = null;
+    });
+  } catch (e) {
+    console.log(`Failed to start API server: ${e.message}`);
+  }
+}
+function handleStop() {
+  if (!_serverProcess) {
+    console.log(dim("API server is not running."));
+    return;
+  }
+  _serverProcess.kill("SIGTERM");
+  _serverProcess = null;
+  console.log(dim("API server stopped."));
+}
 var blue = (s) => C(34, s);
 console.log(blue("\u2500".repeat(64)));
 console.log(bold("Wikipedia Agent"));
-console.log(dim("A personal research assistant for Wikipedia"));
 console.log();
 console.log("  Ask questions no one ever asked");
 console.log();
@@ -1639,12 +2107,18 @@ console.log(blue("Commands"));
 console.log(dim("  /mode            Switch between probe (fast) and rover (in-depth)"));
 console.log(dim("  /mode probe       Direct search with Wikipedia tools"));
 console.log(dim("  /mode rover       Full pipeline: compose \u2192 search \u2192 refine"));
-console.log(dim("  /reset           Clear vector database, prompts, or all"));
-console.log(dim("  /reset db         Delete cached Wikipedia content"));
+console.log(dim("  /serve [port]     Start the OpenAI-compatible API server"));
+console.log(dim("  /stop             Stop the API server"));
+console.log(dim("  /reset            Clear vector database, prompts, or all"));
+console.log(dim("  /reset db          Delete cached Wikipedia content"));
 console.log(dim("  /reset prompts     Restore prompts to default"));
-console.log(dim("  /exit             Exit"));
+console.log(dim("  /exit              Exit"));
 console.log();
 process.on("SIGINT", () => {
+  if (_serverProcess) {
+    _serverProcess.kill("SIGTERM");
+    _serverProcess = null;
+  }
   console.log(dim("\nGoodbye!"));
   rl.close();
   process.exit(0);
@@ -1655,11 +2129,23 @@ process.on("SIGINT", () => {
     if (!input) continue;
     const cmd = input.toLowerCase();
     if (cmd === "/exit") {
+      if (_serverProcess) {
+        _serverProcess.kill("SIGTERM");
+        _serverProcess = null;
+      }
       console.log(dim("Goodbye!"));
       break;
     }
     if (cmd.startsWith("/mode")) {
       handleMode(input);
+      continue;
+    }
+    if (cmd === "/stop") {
+      handleStop();
+      continue;
+    }
+    if (cmd.startsWith("/serve")) {
+      await handleServe(input);
       continue;
     }
     if (cmd.startsWith("/reset")) {

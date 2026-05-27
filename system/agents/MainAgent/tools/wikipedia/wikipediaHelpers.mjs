@@ -89,7 +89,7 @@ export function buildWikiUrl(page, section) {
 // ============================================================================
 
 /**
- * Convert wikitext links to clickable URLs
+ * Parse wikitext links to clickable URLs
  * [[Page]] → [https://en.wikipedia.org/wiki/Page Page]
  * [[Page|text]] → [https://en.wikipedia.org/wiki/Page text]
  * [[Page#Section|text]] → [https://en.wikipedia.org/wiki/Page#Section text]
@@ -107,4 +107,61 @@ export function parseWikitext(wikitext) {
     const url = `https://en.wikipedia.org/wiki/${pagePart.replace(/ /g, "_")}`;
     return `[${url} ${display}]`;
   });
+}
+
+// ============================================================================
+// File/Image helpers
+// ============================================================================
+
+/**
+ * Fetch image/file info from Wikipedia/Commons.
+ *
+ * Uses action=query with prop=imageinfo to retrieve the direct media URL
+ * and description page URL for a given file title (e.g. from wikitext [[File: ...]]).
+ *
+ * Requests only iiprop=url to minimize payload — descriptionurl is included by
+ * default, and the media type is inferred from the file extension client-side.
+ *
+ * @param {string} fileTitle - File title,
+ *   e.g. "BBH gravitational lensing of gw150914.webm"
+ * @returns {Promise<{title: string, url: string, descriptionurl: string}|null>}
+ *   Object with title, url, descriptionurl; or null if not found / error
+ *
+ * @example
+ *   const info = await fetchWikiImageInfo("BBH gravitational lensing of gw150914.webm");
+ *   // => { title: "File:BBH gravitational lensing of gw150914.webm",
+ *   //      url: "https://upload.wikimedia.org/...",
+ *   //      descriptionurl: "https://commons.wikimedia.org/..." }
+ */
+export async function fetchWikiImageInfo(fileTitle) {
+  try {
+    // Auto-prepend "File:" prefix if missing
+    const title = fileTitle.startsWith("File:") ? fileTitle : `File:${fileTitle}`;
+
+    const data = await wikiRequest("query", {
+      prop: "imageinfo",
+      iiprop: "url",
+      titles: title,
+    });
+
+    const pages = data?.query?.pages;
+    if (!pages) return null;
+
+    // Pages may include "-1" (missing) keys even for valid Commons files.
+    // The only reliable signal: imageinfo[0].url exists.
+    const page = Object.values(pages)[0];
+    if (!page) return null;
+
+    const info = page.imageinfo?.[0];
+    if (!info?.url) return null;
+
+    return {
+      title: page.title,
+      url: info.url,
+      descriptionurl: info.descriptionurl,
+    };
+  } catch (error) {
+    console.error(`[fetchWikiImageInfo] failed for "${fileTitle}":`, error.message);
+    return null;
+  }
 }

@@ -10,6 +10,8 @@
     "build": "node src/build.mjs",
     "start": "npm run build && node src/dist/cli.js",
     "dev": "npm run build && node src/dist/cli.js",
+    "serve": "npm run build && node src/api/index.mjs",
+    "api": "npm run build && node src/api/index.mjs",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -26,7 +28,9 @@
   "homepage": "https://github.com/jinyang6/EVPAgent#readme",
   "dependencies": {
     "@lancedb/lancedb": "latest",
-    "@langchain/core": "latest",
+    "@langchain/anthropic": "^1.3.29",
+    "@langchain/core": "^1.1.45",
+    "@langchain/deepseek": "^1.0.25",
     "@langchain/langgraph": "latest",
     "@langchain/openai": "^1.4.4",
     "apache-arrow": "latest",
@@ -34,6 +38,7 @@
     "cheerio": "latest",
     "dotenv": "latest",
     "duck-duck-scrape": "latest",
+    "express": "^5.2.1",
     "langchain": "latest",
     "marked": "^15.0.12",
     "marked-terminal": "^7.3.0",

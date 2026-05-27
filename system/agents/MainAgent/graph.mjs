@@ -1,4 +1,3 @@
-import 'dotenv/config';
 import { StateGraph } from "@langchain/langgraph";
 import { AgentState } from "./state.mjs";
 import { callModel } from "./agent.mjs";
@@ -15,12 +14,10 @@ export const mainGraph = new StateGraph(AgentState)
                             .addNode("tools", toolNode)
                             .addEdge(START, "agent")
                             .addConditionalEdges("agent", (state) => {
-                                const messages = state.messages;
-                                const lastMessage = messages[messages.length - 1];
-                                const toolCalls = ("tool_calls" in lastMessage) ? lastMessage.tool_calls : [];
+                                const lastMessage = state.messages?.[state.messages.length - 1];
                                 
                                 // "tools", if there are tool_calls
-                                if (toolCalls.length > 0) {
+                                if (lastMessage?.tool_calls?.length > 0) {
                                     return "tools";
                                 }
 

@@ -69,8 +69,10 @@ export class SysAgent {
    * Stream results as async generator
    * @param {Array<{role: string, content: string}>} messages - Chat history (CLI-maintained)
    * @param {'probe'|'rover'} mode - Workflow mode: probe (fast) or rover (in-depth)
+   * @param {Object} [opts]
+   * @param {AbortSignal} [opts.signal] - Abort signal to cancel execution
    */
-  async *stream(messages, mode = 'probe') {
+  async *stream(messages, mode = 'probe', { signal } = {}) {
     if (!this._initialized) await this.init();
 
     // Reset session files for fresh query
@@ -78,18 +80,18 @@ export class SysAgent {
 
     // Tool config per mode — report always enabled automatically
     const tools = mode === 'probe'
-      ? { searchWikipedia: true, fetchWikiPage: true, fetch_url: true }   // probe
-      : { searchWikipedia: true, fetchWikiPage: true, fetch_url: true };  // rover: same for now
+      ? { searchWikipedia: true, fetchWikiPage: true, fetch_url: true, deepSearch: true }
+      : { searchWikipedia: true, fetchWikiPage: true, fetch_url: true };
 
     if (mode === 'probe') {
       // Probe mode: pass full chat history for multi-turn context
-      yield* this.#runMainAgent(messages, this.#getProbePrompt(), tools);
+      yield* this.#runMainAgent(messages, this.#getProbePrompt(), tools, signal);
     } else {
       // Rover mode: last user message only (fresh research context)
       const userQuery = messages.findLast(m => m.role === "user")?.content || "";
-      yield* this.#compose(userQuery);
-      yield* this.#runMainAgent([{ role: "user", content: userQuery }], this.#getRoverPrompt(), tools);
-      yield* this.#refine();
+      yield* this.#compose(userQuery, signal);
+      yield* this.#runMainAgent([{ role: "user", content: userQuery }], this.#getRoverPrompt(), tools, signal);
+      yield* this.#refine(signal);
     }
 
     // Yield output.md as final chunk (written by report tool)
@@ -149,6 +151,23 @@ export class SysAgent {
         }
       }
     }
+  }
+
+  /**
+   * Check session manifest to determine if the last search was successful.
+   * @returns {boolean} True if search succeeded
+   */
+  wasSearchSuccessful() {
+    return this.#checkSearchSuccess();
+  }
+
+  /**
+   * Reset session files to clean state.
+   * Exposed for subagent callers (e.g., deepSearch tool) to prevent
+   * polluting the caller's session manifest and output.
+   */
+  resetSession() {
+    this.#resetSessionFiles();
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -231,10 +250,12 @@ export class SysAgent {
    * Step 1: Compose dynamic system prompt (Rover only)
    * Uses PromptComposerAgent to build context-aware system prompt
    * @param {string} userQuery - The query to compose prompt for
+   * @param {AbortSignal} [signal]
    */
-  async *#compose(userQuery) {
+  async *#compose(userQuery, signal) {
     const state = { messages: [{ role: "user", content: userQuery }] };
-    const stream = await composerGraph.stream(state, this.baseConfig);
+    const config = { ...this.baseConfig, signal };
+    const stream = await composerGraph.stream(state, config);
     for await (const chunk of stream) {
       yield* this.#yieldChunk(chunk);
     }
@@ -245,8 +266,9 @@ export class SysAgent {
    * @param {Array<{role: string, content: string}>} messages - Messages to send as initial state
    * @param {string} systemPrompt - System prompt to use
    * @param {Object} tools - Boolean map of enabled tools
+   * @param {AbortSignal} [signal]
    */
-  async *#runMainAgent(messages, systemPrompt, tools) {
+  async *#runMainAgent(messages, systemPrompt, tools, signal) {
     const config = {
       ...this.baseConfig,
       configurable: {
@@ -254,6 +276,7 @@ export class SysAgent {
         systemPrompt: systemPrompt,
         tools: tools,
       },
+      signal,
     };
     const state = { messages };
     const stream = await mainGraph.stream(state, config);
@@ -266,11 +289,13 @@ export class SysAgent {
    * Step 3: Refine prompts based on search results
    * Uses PromptRefineAgent to improve Rephrase and Loop prompts
    * Only runs if search was successful
+   * @param {AbortSignal} [signal]
    */
-  async *#refine() {
+  async *#refine(signal) {
     if (!this.#checkSearchSuccess()) return;
     const state = { messages: [] };
-    const stream = await refineGraph.stream(state, this.baseConfig);
+    const config = { ...this.baseConfig, signal };
+    const stream = await refineGraph.stream(state, config);
     for await (const chunk of stream) {
       yield* this.#yieldChunk(chunk);
     }

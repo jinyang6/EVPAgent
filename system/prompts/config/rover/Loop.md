@@ -27,3 +27,5 @@ For questions that require synthesizing multiple sources:
 4. **Conclude with:**
    - Answer: What is known so far based on Wikipedia
    - Next steps: Specific questions that would advance the research
+      - How subjects needs to be to fullfill the query
+      - Questioning what needs to be what to arrive at what step

@@ -64,8 +64,17 @@ export async function callModel(state, config) {
         ...(messages.length > 0 ? messages : [{ role: "user", content: "Please analyze the session and refine prompts as needed." }])
     ];
 
-    // Inference
-    const response = await provider.invoke(fullMessages);
+    // Inference — wrap in try/catch to handle LLMs that return empty responses
+    let response;
+    try {
+        response = await provider.invoke(fullMessages);
+    } catch (e) {
+        // Some LLMs (e.g. MiniMax) return empty choices when rejecting tool schemas,
+        // causing LangChain to throw "Cannot read properties of undefined (reading 'message')".
+        // Gracefully end the refine phase without making changes.
+        console.error("[PromptRefineAgent] LLM invoke failed:", e.message);
+        response = { role: "assistant", content: "Refine phase skipped — LLM unavailable." };
+    }
     
     return { messages: [response] };
 }

@@ -7,6 +7,7 @@ import { fetchWikiPageTool } from "./wikipedia/fetchWikiPage.mjs";
 // import { webSearchTool } from "./web/webSearchTool.mjs";
 import { fetchUrlTool } from "./web/webFetchTool.mjs";
 import { reportTool } from "./postprocess/reportTool.mjs";
+import { deepSearchTool } from "./delegation/deepSearch.mjs";
 
 /**
  * List all the tools here
@@ -15,6 +16,7 @@ export const tools = [
     searchWikipediaTool,
     fetchWikiPageTool,
     fetchUrlTool,
+    deepSearchTool,
     reportTool,
 ];
 

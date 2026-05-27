@@ -86,7 +86,7 @@ async function fetchWikiPage({ page, sectionIndex, limit = 3, useCache = true })
 
     if (isSection) {
       // Section N: wikitext only
-      const data = await wikiRequest("parse", { page, prop: "wikitext", section: sectionIndex });
+      const data = await wikiRequest("parse", { page, prop: "wikitext", section: sectionIndex, redirects: "true" });
       if (!data?.parse) return `Wikipedia page "${page}" not found.`;
 
       wikitext = data.parse.wikitext?.["*"] || "";
@@ -110,8 +110,8 @@ async function fetchWikiPage({ page, sectionIndex, limit = 3, useCache = true })
 
     // Overview: fetch tocdata and wikitext&section=0 in parallel
     const [tocData, overviewData] = await Promise.all([
-      wikiRequest("parse", { page, prop: "tocdata" }),
-      wikiRequest("parse", { page, prop: "wikitext", section: 0 }),
+      wikiRequest("parse", { page, prop: "tocdata", redirects: "true" }),
+      wikiRequest("parse", { page, prop: "wikitext", section: 0, redirects: "true" }),
     ]);
 
     if (!tocData?.parse) return `Wikipedia page "${page}" not found.`;
