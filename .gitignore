@@ -5,6 +5,8 @@ langgraph.json
 
 # Build output
 src/dist/
+dist/
+dist-electron/
 
 # node_modules/
 node_modules/

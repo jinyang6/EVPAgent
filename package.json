@@ -1,17 +1,25 @@
 {
   "name": "evpagent",
   "version": "1.0.0",
-  "description": "A LangGraph-based AI agent with TUI interface",
-  "main": "index.js",
+  "description": "A LangGraph-based AI agent with Electron desktop interface",
+  "main": "electron/main.cjs",
   "bin": {
     "evp": "./src/dist/cli.js"
   },
+  "type": "module",
   "scripts": {
-    "build": "node src/build.mjs",
-    "start": "npm run build && node src/dist/cli.js",
-    "dev": "npm run build && node src/dist/cli.js",
-    "serve": "npm run build && node src/api/index.mjs",
-    "api": "npm run build && node src/api/index.mjs",
+    "build:agent": "node src/build.mjs",
+    "build:ui": "vite build",
+    "build": "npm run build:agent && npm run build:ui",
+    "dev:agent": "node src/api/index.mjs",
+    "dev:ui": "vite",
+    "dev": "concurrently \"npm run dev:ui\" \"npm run dev:agent\"",
+    "electron:dev": "electron .",
+    "start": "concurrently \"npm run dev\" \"npm run electron:dev\"",
+    "serve": "npm run build:agent && node src/api/index.mjs",
+    "api": "npm run build:agent && node src/api/index.mjs",
+    "electron:build": "npm run build && electron-builder --windows",
+    "electron:build:dir": "npm run build && electron-builder --dir",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -21,7 +29,6 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "module",
   "bugs": {
     "url": "https://github.com/jinyang6/EVPAgent/issues"
   },
@@ -33,21 +40,117 @@
     "@langchain/deepseek": "^1.0.25",
     "@langchain/langgraph": "latest",
     "@langchain/openai": "^1.4.4",
+    "@radix-ui/react-avatar": "^1.1.10",
+    "@radix-ui/react-dialog": "^1.1.15",
+    "@radix-ui/react-dropdown-menu": "^2.1.16",
+    "@radix-ui/react-hover-card": "^1.1.15",
+    "@radix-ui/react-label": "^2.1.7",
+    "@radix-ui/react-popover": "^1.1.15",
+    "@radix-ui/react-progress": "^1.1.7",
+    "@radix-ui/react-scroll-area": "^1.2.10",
+    "@radix-ui/react-separator": "^1.1.7",
+    "@radix-ui/react-slot": "^1.2.3",
+    "@radix-ui/react-tabs": "^1.1.13",
+    "@radix-ui/react-tooltip": "^1.2.8",
     "apache-arrow": "latest",
     "axios": "latest",
     "cheerio": "latest",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "cmdk": "^1.1.1",
     "dotenv": "latest",
     "duck-duck-scrape": "latest",
+    "electron-updater": "^6.8.3",
+    "eletron": "^0.0.1-security",
     "express": "^5.2.1",
     "langchain": "latest",
+    "lucide-react": "^0.546.0",
     "marked": "^15.0.12",
     "marked-terminal": "^7.3.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-markdown": "^10.1.0",
+    "rehype-katex": "^7.0.1",
+    "rehype-raw": "^7.0.0",
+    "rehype-sanitize": "^6.0.0",
+    "remark-gfm": "^4.0.1",
+    "remark-math": "^6.0.0",
+    "sonner": "^2.0.7",
+    "tailwind-merge": "^3.3.1",
+    "tailwindcss-animate": "^1.0.7",
     "turndown": "latest",
+    "uuid": "^9.0.1",
     "zod": "latest"
   },
   "devDependencies": {
     "@langchain/langgraph-cli": "latest",
+    "@tailwindcss/typography": "^0.5.19",
+    "@vitejs/plugin-react": "^4.2.1",
+    "autoprefixer": "^10.4.16",
+    "concurrently": "^9.2.1",
+    "electron": "^28.3.3",
+    "electron-builder": "^24.9.1",
     "esbuild": "latest",
-    "typescript": "latest"
+    "postcss": "^8.4.32",
+    "shadcn": "^3.4.2",
+    "sharp": "^0.34.5",
+    "tailwindcss": "^3.4.0",
+    "to-ico": "^1.1.5",
+    "typescript": "latest",
+    "vite": "^5.0.8",
+    "wait-on": "^9.0.1"
+  },
+  "build": {
+    "appId": "com.evpagent.app",
+    "productName": "EVPAgent",
+    "publish": {
+      "provider": "github",
+      "owner": "jinyang6",
+      "repo": "EVPAgent"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "src/api/**/*",
+      "src/core/**/*",
+      "src/dist/**/*",
+      "system/**/*",
+      "package.json"
+    ],
+    "asar": {
+      "unpack": [
+        "src/api/**/*",
+        "src/core/**/*",
+        "system/**/*"
+      ]
+    },
+    "directories": {
+      "output": "dist-electron",
+      "buildResources": "public"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "public/icon.ico",
+      "artifactName": "${productName}-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "runAfterFinish": true,
+      "installerIcon": "public/icon.ico",
+      "uninstallerIcon": "public/icon.ico",
+      "license": null,
+      "perMachine": false,
+      "allowElevation": true,
+      "installerHeader": null,
+      "installerSidebar": null,
+      "uninstallerSidebar": null,
+      "menuCategory": false,
+      "displayLanguageSelector": false,
+      "warningsAsErrors": false,
+      "include": "build/installer.nsh"
+    }
   }
 }
