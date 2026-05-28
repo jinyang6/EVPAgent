@@ -8,7 +8,6 @@ import TitleBar from './components/TitleBar'
 import Sidebar from './components/Sidebar'
 import ChatWindow from './components/ChatWindow'
 import SettingsModal from './components/SettingsModal'
-import ProviderModelBar from './components/ProviderModelBar'
 import { isElectron, signalAppReady } from '@/platform/ElectronBridge'
 
 // Inner component that signals app ready when both contexts are loaded
@@ -92,11 +91,8 @@ function App() {
                   onToggleSidebar={() => setSidebarOpen(prev => !prev)}
                 />
 
-                {/* Right side: Provider Bar at top, ChatWindow below */}
+                {/* Right side: ChatWindow */}
                 <div className="flex flex-col flex-1 min-w-0 h-full overflow-hidden">
-                  {/* Provider/Model Selector Bar */}
-                  <ProviderModelBar onOpenSettings={() => setShowSettings(true)} />
-
                   {/* Main Chat Area */}
                   <ChatWindow
                     conversationId={currentConversation}

@@ -60,7 +60,6 @@ function categorizeError(error) {
 export function useModelFetcher() {
   const {
     apiKeys,
-    customProviders,
     setModelsFetchLoading,
     setModelsFetchError,
     updateFetchedModels,
@@ -84,8 +83,7 @@ export function useModelFetcher() {
 
     // Get provider config
     const provider = getProviderById(providerId)
-    const customProvider = customProviders.find(p => p.id === providerId)
-    const providerConfig = provider || customProvider
+    const providerConfig = provider
 
     if (!providerConfig) {
       const error = new Error(`Provider ${providerId} not found`)
@@ -121,7 +119,7 @@ export function useModelFetcher() {
       const models = await fetchModelsForProvider(
         providerId,
         apiKey,
-        customProvider // Pass custom provider config if available
+        null
       )
 
       // Update context with fetched models
@@ -139,7 +137,6 @@ export function useModelFetcher() {
     }
   }, [
     apiKeys,
-    customProviders,
     getModelsForProvider,
     setModelsFetchLoading,
     setModelsFetchError,

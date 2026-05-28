@@ -10,11 +10,10 @@ import { Label } from '@/components/ui/label'
 import { Plus as PlusIcon, Settings as SettingsIcon, MessageSquare as MessageSquareIcon, Pencil as PencilIcon, Trash as TrashIcon, MoreVertical as MoreVerticalIcon, PanelLeftClose as ChevronsLeftIcon, PanelLeftOpen as ChevronsRightIcon } from 'lucide-react'
 import { useConversation } from '@/contexts/ConversationContext'
 import { useProvider } from '@/contexts/ProviderContext'
-import { PROVIDERS } from '@/config/providers'
 
 function Sidebar({ isOpen, onSelectConversation, onOpenSettings, sidebarOpen, onToggleSidebar }) {
   const { conversations, currentConversationId, startNewConversation, selectConversation, updateConversationTitle, deleteConversation } = useConversation()
-  const { setProvider, customProviders, provider } = useProvider()
+  const { provider } = useProvider()
 
 
   const [editingConv, setEditingConv] = useState(null)
@@ -78,15 +77,9 @@ function Sidebar({ isOpen, onSelectConversation, onOpenSettings, sidebarOpen, on
     const conversation = conversations.find(c => c.id === conversationID)
     if (!conversation) return
 
-    if (conversation.provider) {
-      const allProviders = [...PROVIDERS, ...customProviders]
-      const providerExists = allProviders.some(p => p.id === conversation.provider)
-      setProvider(providerExists ? conversation.provider : PROVIDERS[0].id)
-    }
-
     selectConversation(conversationID)
     onSelectConversation?.(conversationID)
-  }, [conversations, customProviders, setProvider, selectConversation, onSelectConversation])
+  }, [conversations, selectConversation, onSelectConversation])
 
   const handleEditClick = useCallback((conv) => {
     setEditingConv(conv)
@@ -137,7 +130,7 @@ function Sidebar({ isOpen, onSelectConversation, onOpenSettings, sidebarOpen, on
         <div className={`w-full flex items-center justify-between ${isOpen ? 'px-1' : ''}`}>
           {isOpen && provider && (
             <span className="text-4xl font-semibold text-muted-foreground leading-none tracking-tight">
-              {PROVIDERS.find(p => p.id === provider)?.name || customProviders.find(p => p.id === provider)?.name || provider}
+              EVPAgent
             </span>
           )}
           <TooltipProvider delayDuration={300}>

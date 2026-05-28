@@ -21,14 +21,14 @@ export function ApiKeysTab({
   return (
     <Tabs defaultValue="evpagent" className="w-full">
       <TabsList className="grid w-full grid-cols-4">
-        {PROVIDERS.filter(p => !p.hidden).map((provider) => (
+        {PROVIDERS.map((provider) => (
           <TabsTrigger key={provider.id} value={provider.id}>
             {provider.name.split(' ')[0]}
           </TabsTrigger>
         ))}
       </TabsList>
 
-      {PROVIDERS.filter(p => !p.hidden).map((provider) => (
+      {PROVIDERS.map((provider) => (
         <TabsContent key={provider.id} value={provider.id} className="space-y-4 mt-4">
           {/* Provider Header */}
           <div className="space-y-1">

@@ -4,30 +4,21 @@ import { secureStore as store } from '@/data/SecureStore'
 
 const ProviderContext = createContext(null)
 
-// Helper to check if Electron is available
 const useElectronStorage = isElectron()
 
 export function ProviderProvider({ children }) {
-  // Loading state to track initial data loading
   const [isLoading, setIsLoading] = useState(true)
   const [encryptionStatus, setEncryptionStatus] = useState(null)
 
-  // Load initial state
-  const [provider, setProvider] = useState('evpagent')
-  const [model, setModel] = useState('probe')
-  const [apiKeys, setApiKeys] = useState({
-    evpagent: '',
-    openrouter: '',
-    openai: '',
-    gemini: '',
-    anthropic: ''
-  })
+  // Always evpagent / probe — no provider switching
+  const [provider] = useState('evpagent')
+  const [model] = useState('probe')
+  const [apiKeys, setApiKeys] = useState({ evpagent: '' })
 
   // Initialize from storage on mount
   useEffect(() => {
     const loadInitialData = async () => {
       try {
-        // Check encryption availability first
         if (useElectronStorage) {
           try {
             const encStatus = await isEncryptionAvailable()
@@ -41,57 +32,24 @@ export function ProviderProvider({ children }) {
         }
 
         if (useElectronStorage) {
-          // Load from Electron secure storage
-          const [providerResult, modelResult, apiKeysResult, customProvidersResult] = await Promise.all([
-            store.get('defaultProvider'),
-            store.get('defaultModel'),
-            store.get('apiKeys'),
-            store.get('customProviders')
-          ])
-
-          if (providerResult.success && providerResult.value) {
-            setProvider(providerResult.value)
-          }
-          if (modelResult.success && modelResult.value) {
-            setModel(modelResult.value)
-          }
+          const apiKeysResult = await store.get('apiKeys')
           if (apiKeysResult.success && apiKeysResult.value) {
-            // Merge loaded keys with default state to ensure all providers are present
             setApiKeys(prev => ({ ...prev, ...apiKeysResult.value }))
           }
-          if (customProvidersResult.success && customProvidersResult.value) {
-            setCustomProviders(customProvidersResult.value)
-          }
         } else {
-          // Load from localStorage
-          const savedProvider = localStorage.getItem('defaultProvider')
-          const savedModel = localStorage.getItem('defaultModel')
           const savedApiKeys = localStorage.getItem('apiKeys')
-          const savedCustomProviders = localStorage.getItem('customProviders')
-
-          if (savedProvider) setProvider(savedProvider)
-          if (savedModel) setModel(savedModel)
           if (savedApiKeys) {
             try {
-              // Merge loaded keys with default state to ensure all providers are present
               const loadedKeys = JSON.parse(savedApiKeys)
               setApiKeys(prev => ({ ...prev, ...loadedKeys }))
             } catch (e) {
               console.error('Failed to parse stored API keys:', e)
             }
           }
-          if (savedCustomProviders) {
-            try {
-              setCustomProviders(JSON.parse(savedCustomProviders))
-            } catch (e) {
-              console.error('Failed to parse custom providers:', e)
-            }
-          }
         }
       } catch (error) {
         console.error('Failed to load initial data:', error)
       } finally {
-        // Always set loading to false when done
         setIsLoading(false)
       }
     }
@@ -115,119 +73,39 @@ export function ProviderProvider({ children }) {
   // Models fetch status
   const [modelsFetchStatus, setModelsFetchStatus] = useState({})
 
-  // Custom providers added by user
-  const [customProviders, setCustomProviders] = useState([])
-
-  // Persist to storage when values change
+  // Persist API keys
   useEffect(() => {
-    // Don't save during initial load to prevent overwriting stored values
-    if (isLoading) return
-
-    const saveProvider = async () => {
-      try {
-        if (useElectronStorage) {
-          await store.set('defaultProvider', provider)
-        } else {
-          localStorage.setItem('defaultProvider', provider)
-        }
-      } catch (error) {
-        console.error('Failed to save provider:', error)
-      }
-    }
-    saveProvider()
-  }, [provider, isLoading])
-
-  useEffect(() => {
-    // Don't save during initial load to prevent overwriting stored values
-    if (isLoading) return
-
-    const saveModel = async () => {
-      try {
-        if (useElectronStorage) {
-          await store.set('defaultModel', model)
-        } else {
-          localStorage.setItem('defaultModel', model)
-        }
-      } catch (error) {
-        console.error('Failed to save model:', error)
-      }
-    }
-    saveModel()
-  }, [model, isLoading])
-
-  useEffect(() => {
-    // Don't save during initial load to prevent overwriting stored values
     if (isLoading) return
 
     const saveApiKeys = async () => {
       try {
-        // Get list of valid provider IDs (built-in + active custom)
-        const builtInProviders = ['evpagent', 'openrouter', 'openai', 'gemini', 'anthropic']
-        const customProviderIds = customProviders.map(p => p.id)
-        const validProviderIds = [...builtInProviders, ...customProviderIds]
-
-        // Filter apiKeys to only include valid providers (removes orphaned keys)
-        const cleanedKeys = validProviderIds.reduce((acc, id) => {
-          acc[id] = apiKeys[id] || ''
-          return acc
-        }, {})
-
-        const keyProviders = Object.keys(cleanedKeys).filter(key => cleanedKeys[key])
-        console.log('💾 Saving API keys for providers:', keyProviders)
-        console.log('🧹 Cleaned keys (total providers):', validProviderIds.length)
+        const cleanedKeys = { evpagent: apiKeys.evpagent || '' }
 
         if (useElectronStorage) {
           await store.set('apiKeys', cleanedKeys)
-          console.log('✅ API keys encrypted and saved to store.json')
         } else {
           localStorage.setItem('apiKeys', JSON.stringify(cleanedKeys))
-          console.log('✅ API keys saved to localStorage')
         }
       } catch (error) {
-        console.error('❌ Failed to save API keys:', error)
+        console.error('Failed to save API keys:', error)
       }
     }
     saveApiKeys()
-  }, [apiKeys, customProviders, isLoading])
+  }, [apiKeys, isLoading])
 
   useEffect(() => {
     localStorage.setItem('fetchedModels', JSON.stringify(fetchedModels))
   }, [fetchedModels])
 
-  useEffect(() => {
-    // Don't save during initial load
-    if (isLoading) return
-
-    const saveCustomProviders = async () => {
-      try {
-        if (useElectronStorage) {
-          await store.set('customProviders', customProviders)
-          console.log('✅ Custom providers saved to store.json')
-        } else {
-          localStorage.setItem('customProviders', JSON.stringify(customProviders))
-          console.log('✅ Custom providers saved to localStorage')
-        }
-      } catch (error) {
-        console.error('❌ Failed to save custom providers:', error)
-      }
-    }
-    saveCustomProviders()
-  }, [customProviders, isLoading])
-
   const updateApiKey = (providerId, key) => {
-    setApiKeys(prev => ({
-      ...prev,
-      [providerId]: key
-    }))
+    setApiKeys(prev => ({ ...prev, [providerId]: key }))
   }
 
   const getModelsForProvider = (providerId) => {
-    // Return fetched models if available and fresh (< 24 hours)
     const cached = fetchedModels[providerId]
     if (cached && cached.models && cached.lastFetched) {
       const age = Date.now() - cached.lastFetched
-      const isStale = age > 24 * 60 * 60 * 1000 // 24 hours
-      if (!isStale) {
+      if (age <= 24 * 60 * 60 * 1000) {
         return cached.models
       }
     }
@@ -251,11 +129,7 @@ export function ProviderProvider({ children }) {
   const updateFetchedModels = (providerId, models) => {
     setFetchedModels(prev => ({
       ...prev,
-      [providerId]: {
-        models,
-        lastFetched: Date.now(),
-        error: null
-      }
+      [providerId]: { models, lastFetched: Date.now(), error: null }
     }))
     setModelsFetchStatus(prev => ({
       ...prev,
@@ -263,59 +137,20 @@ export function ProviderProvider({ children }) {
     }))
   }
 
-  const clearModelsCache = (providerId) => {
-    setFetchedModels(prev => {
-      const updated = { ...prev }
-      delete updated[providerId]
-      return updated
-    })
-  }
-
-  const addCustomProvider = (providerConfig) => {
-    setCustomProviders(prev => [...prev, providerConfig])
-  }
-
-  const updateCustomProvider = (providerId, updatedConfig) => {
-    setCustomProviders(prev =>
-      prev.map(p => p.id === providerId ? { ...p, ...updatedConfig } : p)
-    )
-    // Clear cache when provider config changes
-    clearModelsCache(providerId)
-  }
-
-  const removeCustomProvider = (providerId) => {
-    setCustomProviders(prev => prev.filter(p => p.id !== providerId))
-    clearModelsCache(providerId)
-
-    // Remove API key for deleted provider
-    setApiKeys(prev => {
-      const updated = { ...prev }
-      delete updated[providerId]
-      return updated
-    })
-  }
-
   const value = {
     provider,
-    setProvider,
     model,
-    setModel,
     apiKeys,
     setApiKeys,
     updateApiKey,
     fetchedModels,
     modelsFetchStatus,
-    customProviders,
     isLoading,
     encryptionStatus,
     getModelsForProvider,
     setModelsFetchLoading,
     setModelsFetchError,
     updateFetchedModels,
-    clearModelsCache,
-    addCustomProvider,
-    updateCustomProvider,
-    removeCustomProvider
   }
 
   return (
