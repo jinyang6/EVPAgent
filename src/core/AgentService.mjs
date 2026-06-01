@@ -9,6 +9,7 @@
  */
 
 import { SysAgent } from '../../system/agents/SysAgent/index.mjs';
+import { getConfig } from '../config.mjs';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Model Registry
@@ -100,15 +101,13 @@ export const AgentService = {
    * Fetch the actual context length of the configured search model
    * from the provider's models endpoint.  Falls back to 128000 on failure.
    *
-   * Reads SEARCH_MODEL_BASE_URL, SEARCH_MODEL_API_KEY, and SEARCH_MODEL_ID
-   * from the environment.
+   * Reads baseUrl and modelId from config.json (searchModel).
+   * apiKey is not needed here — context_length is a property of the model, not the key.
    *
    * @returns {Promise<void>}
    */
   async init() {
-    const baseUrl = process.env.SEARCH_MODEL_BASE_URL;
-    const apiKey = process.env.SEARCH_MODEL_API_KEY;
-    const modelId = process.env.SEARCH_MODEL_ID;
+    const { searchModel: { baseUrl, modelId } } = getConfig();
 
     if (!baseUrl || !modelId) {
       this._contextLength = DEFAULT_CONTEXT_LENGTH;
@@ -118,7 +117,6 @@ export const AgentService = {
     try {
       const modelsUrl = baseUrl.replace(/\/+$/, '') + '/models';
       const response = await fetch(modelsUrl, {
-        headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
         signal: AbortSignal.timeout(5000),
       });
 
@@ -235,11 +233,12 @@ export const AgentService = {
    * @param {Object} [opts]
    * @param {SysAgent} [opts.agent] - Reuse an existing instance (CLI keeps stats)
    * @param {AbortSignal} [opts.signal] - Abort signal to cancel execution
+   * @param {string} [opts.apiKey] - OpenRouter API key (overrides .env SEARCH_MODEL_API_KEY)
    * @returns {AsyncGenerator<{ type: string, text: string }>}
    */
-  async *streamEvents(messages, mode = 'probe', { agent, signal } = {}) {
-    console.log('[AgentService] streamEvents started, mode:', mode);
-    const sysAgent = agent || new SysAgent();
+  async *streamEvents(messages, mode = 'probe', { agent, signal, apiKey } = {}) {
+    console.log('[AgentService] streamEvents started, mode:', mode, apiKey ? '(using user apiKey)' : '(using .env key)');
+    const sysAgent = agent || new SysAgent({ apiKey });
     const normalized = normalizeMessages(messages);
 
     let content = '';

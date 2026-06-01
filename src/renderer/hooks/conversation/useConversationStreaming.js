@@ -13,6 +13,10 @@ export function useConversationStreaming(setConversations, streamingConversation
 
   const isConversationStreaming = (id) => streamingConversationIds.has(id)
 
+  const isAnyConversationStreaming = () => streamingConversationIds.size > 0
+
+  const getStreamingConversationId = () => streamingConversationIds.values().next().value ?? null
+
   const startStreaming = (conversationId) => {
     const controller = new AbortController()
     abortControllersRef.current.set(conversationId, controller)
@@ -219,6 +223,8 @@ export function useConversationStreaming(setConversations, streamingConversation
 
   return {
     isConversationStreaming,
+    isAnyConversationStreaming,
+    getStreamingConversationId,
     startStreaming,
     stopStreaming,
     updateLastMessage,

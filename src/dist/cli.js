@@ -1,12 +1,10 @@
 #!/usr/bin/env node
 
 // src/cli.js
-import { config } from "dotenv";
-import { resolve } from "path";
 import readline from "readline";
 import { spawn } from "child_process";
 import { fileURLToPath as fileURLToPath2 } from "url";
-import { dirname as dirname2, join as join15 } from "path";
+import { dirname as dirname3, join as join16 } from "path";
 import { marked } from "marked";
 import { markedTerminal } from "marked-terminal";
 
@@ -196,9 +194,9 @@ Your task:
 IMPORTANT: 
 - MUST follow the above steps
 - After calling combinePrompts, simply return a message saying "Done" - do NOT call any more tools.`;
-async function callModel(state, config2) {
+async function callModel(state, config) {
   const messages = state.messages;
-  const { baseURL, apiKey, modelId } = config2.configurable;
+  const { baseURL, apiKey, modelId } = config.configurable;
   const provider = createModel({
     baseURL,
     apiKey,
@@ -457,8 +455,8 @@ Analysis criteria:
 - Should add new prompts (Rephrase, Loop) make generic topic searches better?
 
 After finishing your analysis and any prompt changes, simply end your turn. Do NOT call any more tools.`;
-async function callModel2(state, config2) {
-  const { baseURL, apiKey, modelId } = config2.configurable;
+async function callModel2(state, config) {
+  const { baseURL, apiKey, modelId } = config.configurable;
   const messages = state.messages;
   const provider = createModel({
     baseURL,
@@ -596,6 +594,62 @@ import { createHash } from "node:crypto";
 import axios2 from "axios";
 import { connect } from "@lancedb/lancedb";
 import { OpenAIEmbeddings } from "@langchain/openai";
+
+// src/config.mjs
+import { readFileSync as readFileSync11, writeFileSync as writeFileSync4, existsSync as existsSync11, mkdirSync } from "fs";
+import { join as join12, dirname } from "path";
+function resolvePaths() {
+  const userPath = process.env.EVPAGENT_USER_CONFIG_PATH;
+  const exPath = process.env.EVPAGENT_EXAMPLE_CONFIG_PATH;
+  if (userPath && exPath) {
+    return { configPath: userPath, examplePath: exPath };
+  }
+  const cwd = process.cwd();
+  return {
+    configPath: join12(cwd, "config.json"),
+    examplePath: join12(cwd, "config.example.json")
+  };
+}
+var _config = null;
+function loadConfig() {
+  if (_config) return _config;
+  const { configPath, examplePath } = resolvePaths();
+  if (!existsSync11(configPath) && existsSync11(examplePath)) {
+    console.log(`[config] First run \u2014 copying ${examplePath} \u2192 ${configPath}`);
+    const dir = dirname(configPath);
+    if (!existsSync11(dir)) mkdirSync(dir, { recursive: true });
+    const exampleContent = readFileSync11(examplePath, "utf-8");
+    writeFileSync4(configPath, exampleContent, "utf-8");
+  }
+  if (!existsSync11(configPath)) {
+    throw new Error(
+      `config.json not found at "${configPath}".  Copy config.example.json to config.json and set your model.`
+    );
+  }
+  const raw = readFileSync11(configPath, "utf-8").trim();
+  if (!raw) {
+    throw new Error(`config.json at "${configPath}" is empty.`);
+  }
+  try {
+    _config = JSON.parse(raw);
+  } catch (e) {
+    throw new Error(`config.json is malformed: ${e.message}`);
+  }
+  for (const section of ["searchModel", "embeddingModel"]) {
+    const s = _config[section];
+    if (!s?.baseUrl || !s?.modelId) {
+      throw new Error(
+        `config.json is missing "${section}.baseUrl" or "${section}.modelId".`
+      );
+    }
+  }
+  return _config;
+}
+function getConfig() {
+  return loadConfig();
+}
+
+// system/agents/MainAgent/tools/vector/vectorHelpers.mjs
 var TABLE_NAME = "evpagent_wikipedia";
 var USER_AGENT = "EVPAgent/1.0 (https://github.com/jinyang6/EVPAgent; jiatom519@gmail.com)";
 function getVectorDBPath() {
@@ -608,18 +662,21 @@ function getVectorDBPath() {
   }
   return process.env.XDG_CONFIG_HOME ? path.join(process.env.XDG_CONFIG_HOME, "evpagent", "lancedb") : path.join(homeDir, ".config", "evpagent", "lancedb");
 }
-var embeddingsInstance = null;
-function getEmbeddings() {
-  if (!embeddingsInstance) {
-    embeddingsInstance = new OpenAIEmbeddings({
-      model: process.env.EMBEDDING_MODEL_ID,
-      apiKey: process.env.EMBEDDING_MODEL_API_KEY,
+var _cachedEmbeddingsInstance = null;
+var _cachedEmbeddingsKey = void 0;
+function getEmbeddings(apiKey) {
+  const { embeddingModel } = getConfig();
+  if (!_cachedEmbeddingsInstance || _cachedEmbeddingsKey !== apiKey) {
+    _cachedEmbeddingsInstance = new OpenAIEmbeddings({
+      model: embeddingModel.modelId,
+      apiKey: apiKey || void 0,
       configuration: {
-        baseURL: process.env.EMBEDDING_MODEL_BASE_URL
+        baseURL: embeddingModel.baseUrl
       }
     });
+    _cachedEmbeddingsKey = apiKey;
   }
-  return embeddingsInstance;
+  return _cachedEmbeddingsInstance;
 }
 var db = null;
 var table = null;
@@ -630,7 +687,7 @@ async function getTable() {
     try {
       table = await db.openTable(TABLE_NAME);
     } catch (error) {
-      const embeddings = getEmbeddings();
+      const embeddings = getEmbeddings(null);
       const placeholderVector = await embeddings.embedQuery("__init__");
       table = await db.createTable(TABLE_NAME, [
         {
@@ -650,9 +707,9 @@ async function getTable() {
   return table;
 }
 async function resetVectorDB() {
-  const { rmSync, existsSync: existsSync15 } = await import("fs");
+  const { rmSync, existsSync: existsSync16 } = await import("fs");
   const dbPath = getVectorDBPath();
-  if (existsSync15(dbPath)) {
+  if (existsSync16(dbPath)) {
     rmSync(dbPath, { recursive: true, force: true });
   }
   db = null;
@@ -697,13 +754,13 @@ function buildWikiUrl2(article, section = null) {
   }
   return `https://en.wikipedia.org/wiki/${encodedTitle}`;
 }
-async function searchVectorDB(query, k = 3, filterType) {
+async function searchVectorDB(query, k = 3, filterType, apiKey = null) {
   if (!filterType) {
     throw new Error("filterType is required for searchVectorDB");
   }
   try {
     const tbl = await getTable();
-    const embeddings = getEmbeddings();
+    const embeddings = getEmbeddings(apiKey);
     const queryEmbedding = await embeddings.embedQuery(query);
     const results = await tbl.search(queryEmbedding).limit(k * 2).toArray();
     const formattedResults = results.filter((row) => row.type === filterType).slice(0, k).map((row) => ({
@@ -725,10 +782,10 @@ async function searchVectorDB(query, k = 3, filterType) {
     return [];
   }
 }
-async function upsertWikiPage(page, section, content, sectionIndex = 0) {
+async function upsertWikiPage(page, section, content, sectionIndex = 0, apiKey = null) {
   try {
     const tbl = await getTable();
-    const embeddings = getEmbeddings();
+    const embeddings = getEmbeddings(apiKey);
     const url = buildWikiUrl2(page, section);
     const lastEdited = await getLastEditedTime(page);
     const id = generateDocId(
@@ -799,7 +856,8 @@ var wikipediaSearchSchema = z10.object({
   query: z10.string().describe("The search query to find relevant Wikipedia articles"),
   limit: z10.number().optional().default(5).describe("Number of results: 3 for simple facts, 5 for default, 10+ for comprehensive research")
 });
-async function wikipediaSearch({ query, limit = 5 }) {
+async function wikipediaSearch({ query, limit = 5 }, config) {
+  const apiKey = config?.configurable?.apiKey || null;
   try {
     const [wikiData, cachedOverviews, cachedSections] = await Promise.all([
       wikiRequest("query", {
@@ -809,8 +867,8 @@ async function wikipediaSearch({ query, limit = 5 }) {
         srprop: "timestamp|snippet",
         utf8: "1"
       }),
-      searchVectorDB(query, limit, "pageOverview"),
-      searchVectorDB(query, limit, "pageSection")
+      searchVectorDB(query, limit, "pageOverview", apiKey),
+      searchVectorDB(query, limit, "pageSection", apiKey)
     ]);
     const queryData = wikiData?.query;
     const hasWikiResults = queryData?.search && queryData.search.length > 0;
@@ -907,13 +965,14 @@ var wikiPageSchema = z11.object({
   limit: z11.number().optional().default(3).describe("Vector cache top-k for semantic search"),
   useCache: z11.boolean().optional().default(true).describe("Whether to use vector cache for retrieval")
 });
-async function fetchWikiPage({ page, sectionIndex, limit = 3, useCache = true }) {
+async function fetchWikiPage({ page, sectionIndex, limit = 3, useCache = true }, config) {
+  const apiKey = config?.configurable?.apiKey || null;
   const normalizedSectionIndex = sectionIndex ?? 0;
   const pageUrl = buildWikiUrl(page);
   async function cacheLookup() {
     const filterType = sectionIndex !== void 0 && sectionIndex > 0 ? "pageSection" : "pageOverview";
     const cacheKey = sectionIndex !== void 0 ? `${page}:${sectionIndex}` : page;
-    const cachedResults = await searchVectorDB(cacheKey, limit, filterType);
+    const cachedResults = await searchVectorDB(cacheKey, limit, filterType, apiKey);
     if (cachedResults && cachedResults.length > 0) {
       const matching = cachedResults.find(
         (r) => r.metadata?.article === page && r.metadata?.sectionIndex === normalizedSectionIndex
@@ -935,10 +994,10 @@ _Cache hit - retrieved from local vector database_`;
     return null;
   }
   async function cacheSection(sectionName, wikitext, idx) {
-    await upsertWikiPage(page, sectionName, wikitext, idx);
+    await upsertWikiPage(page, sectionName, wikitext, idx, apiKey);
   }
   async function cacheOverview(wikitext) {
-    await upsertWikiPage(page, "", wikitext, 0);
+    await upsertWikiPage(page, "", wikitext, 0, apiKey);
   }
   if (useCache) {
     try {
@@ -1145,11 +1204,11 @@ Input: URL to fetch`,
 
 // system/agents/MainAgent/tools/postprocess/reportTool.mjs
 import { tool as tool13 } from "@langchain/core/tools";
-import { readFileSync as readFileSync11, existsSync as existsSync11, writeFileSync as writeFileSync4, mkdirSync } from "fs";
-import { join as join12 } from "path";
+import { readFileSync as readFileSync12, existsSync as existsSync12, writeFileSync as writeFileSync5, mkdirSync as mkdirSync2 } from "fs";
+import { join as join13 } from "path";
 import z13 from "zod";
 function getOutputFile() {
-  return join12(getOutputDir(), "output.md");
+  return join13(getOutputDir(), "output.md");
 }
 function getFileTypeFromFormat(ext) {
   const format = ext.replace(/^\./, "").trim().toLowerCase();
@@ -1191,12 +1250,12 @@ function renderMedia({ title, url, descriptionurl }, description) {
 var reportTool = tool13(
   async ({ searchSuccess, items }) => {
     const promptsDir = getUserPromptsDir();
-    const manifestPath = join12(promptsDir, "session_manifest.json");
+    const manifestPath = join13(promptsDir, "session_manifest.json");
     if (items && items.length > 0) {
       const outputDir = getOutputDir();
       const outputFile = getOutputFile();
-      if (!existsSync11(outputDir)) {
-        mkdirSync(outputDir, { recursive: true });
+      if (!existsSync12(outputDir)) {
+        mkdirSync2(outputDir, { recursive: true });
       }
       const mediaIndices = [];
       items.forEach((item, i) => {
@@ -1215,16 +1274,16 @@ var reportTool = tool13(
           parts.push(info ? renderMedia(info, item.description) : `> Media not found: \`${item.content}\``);
         }
       }
-      writeFileSync4(outputFile, parts.join("\n\n"), "utf-8");
+      writeFileSync5(outputFile, parts.join("\n\n"), "utf-8");
     }
-    if (!existsSync11(manifestPath)) {
+    if (!existsSync12(manifestPath)) {
       return "Error: session_manifest.json not found";
     }
     try {
-      const manifest = JSON.parse(readFileSync11(manifestPath, "utf-8"));
+      const manifest = JSON.parse(readFileSync12(manifestPath, "utf-8"));
       manifest.searchSuccess = searchSuccess;
       manifest.timestamp = (/* @__PURE__ */ new Date()).toISOString();
-      writeFileSync4(manifestPath, JSON.stringify(manifest, null, 2), "utf-8");
+      writeFileSync5(manifestPath, JSON.stringify(manifest, null, 2), "utf-8");
       const itemCount = items?.length || 0;
       const mediaCount = items?.filter((i) => i.type === "media").length || 0;
       return `Report saved (${itemCount} items, ${mediaCount} media).`;
@@ -1268,28 +1327,25 @@ Returns: Confirmation message with item and media count.`,
 // system/agents/MainAgent/tools/delegation/deepSearch.mjs
 import { tool as tool14 } from "@langchain/core/tools";
 import z14 from "zod";
-var _rover = null;
-function getRover() {
-  if (!_rover) _rover = new SysAgent();
-  return _rover;
-}
 var deepSearchTool = tool14(
-  async ({ query }, config2) => {
+  async ({ query }, config) => {
+    const apiKey = config?.configurable?.apiKey || null;
+    const rover = new SysAgent({ apiKey });
     let result = "";
-    for await (const chunk of getRover().stream(
+    for await (const chunk of rover.stream(
       [{ role: "user", content: query }],
       "rover",
-      { signal: config2?.signal }
+      { signal: config?.signal }
     )) {
       const content = chunk?.choices?.[0]?.delta?.content;
       if (content) result = content;
     }
     if (result) {
-      getRover().resetSession();
+      rover.resetSession();
       return result;
     }
-    const success = getRover().wasSearchSuccessful();
-    getRover().resetSession();
+    const success = rover.wasSearchSuccessful();
+    rover.resetSession();
     return success ? "Search succeeded but no report was generated." : "Search failed. No report was generated.";
   },
   {
@@ -1331,9 +1387,9 @@ var tools3 = [
 var toolNode3 = new ToolNode3(tools3);
 
 // system/agents/MainAgent/agent.mjs
-async function callModel3(state, config2) {
+async function callModel3(state, config) {
   const messages = state.messages;
-  const { baseURL, apiKey, modelId, systemPrompt, tools: allowedTools } = config2.configurable;
+  const { baseURL, apiKey, modelId, systemPrompt, tools: allowedTools } = config.configurable;
   const ALWAYS_ENABLED = ["report"];
   const activeTools = allowedTools ? tools3.filter((t) => ALWAYS_ENABLED.includes(t.name) || allowedTools[t.name] === true) : tools3;
   const fullMessages = [
@@ -1360,38 +1416,38 @@ var mainGraph = new StateGraph3(AgentState).addNode("agent", callModel3).addNode
 }).addEdge("tools", "agent").compile();
 
 // system/agents/SysAgent/utils/paths.mjs
-import { join as join13, dirname } from "path";
+import { join as join14, dirname as dirname2 } from "path";
 import { homedir as homedir2 } from "os";
 import { fileURLToPath } from "url";
-import { existsSync as existsSync12 } from "fs";
+import { existsSync as existsSync13 } from "fs";
 function getBaseDir2() {
   const homeDir = homedir2();
   if (process.platform === "win32") {
-    return process.env.APPDATA || join13(homeDir, ".evpagent");
+    return process.env.APPDATA || join14(homeDir, ".evpagent");
   }
   if (process.platform === "darwin") {
-    return join13(homeDir, "Library", "Application Support");
+    return join14(homeDir, "Library", "Application Support");
   }
-  return process.env.XDG_CONFIG_HOME || join13(homeDir, ".config");
+  return process.env.XDG_CONFIG_HOME || join14(homeDir, ".config");
 }
 function getPromptsDir() {
-  return join13(getBaseDir2(), "EVPAgent", "prompts", "dynamic_prompts");
+  return join14(getBaseDir2(), "EVPAgent", "prompts", "dynamic_prompts");
 }
 function getConfigDir() {
-  return join13(getBaseDir2(), "EVPAgent", "prompts", "config");
+  return join14(getBaseDir2(), "EVPAgent", "prompts", "config");
 }
 function getScriptDir() {
-  const entryDir = dirname(fileURLToPath(import.meta.url));
+  const entryDir = dirname2(fileURLToPath(import.meta.url));
   const possiblePaths = [
     // Bundled npm: node_modules/evpagent/prompts/
-    join13(entryDir, "..", "..", "..", "..", "prompts"),
+    join14(entryDir, "..", "..", "..", "..", "prompts"),
     // Built dist: EVPAgent/src/dist/prompts/
-    join13(entryDir, "..", "..", "system", "prompts"),
+    join14(entryDir, "..", "..", "system", "prompts"),
     // Development source: EVPAgent/system/prompts/
-    join13(entryDir, "..", "..", "..", "..", "system", "prompts")
+    join14(entryDir, "..", "..", "..", "..", "system", "prompts")
   ];
   for (const p of possiblePaths) {
-    if (existsSync12(p)) {
+    if (existsSync13(p)) {
       return p;
     }
   }
@@ -1399,18 +1455,18 @@ function getScriptDir() {
 }
 
 // system/agents/SysAgent/utils/files.mjs
-import { existsSync as existsSync13, readFileSync as readFileSync12 } from "fs";
+import { existsSync as existsSync14, readFileSync as readFileSync13 } from "fs";
 function readJson(path3) {
-  if (!existsSync13(path3)) return null;
+  if (!existsSync14(path3)) return null;
   try {
-    return JSON.parse(readFileSync12(path3, "utf-8"));
+    return JSON.parse(readFileSync13(path3, "utf-8"));
   } catch {
     return null;
   }
 }
 function readFile(path3) {
-  if (!existsSync13(path3)) return null;
-  const content = readFileSync12(path3, "utf-8");
+  if (!existsSync14(path3)) return null;
+  const content = readFileSync13(path3, "utf-8");
   return content.trim() || null;
 }
 
@@ -1440,8 +1496,8 @@ function isNonEmptyString(val) {
 }
 
 // system/agents/SysAgent/index.mjs
-import { existsSync as existsSync14, cpSync, mkdirSync as mkdirSync2, readdirSync as readdirSync3, unlinkSync as unlinkSync2, writeFileSync as writeFileSync5, readFileSync as readFileSync13 } from "fs";
-import { join as join14 } from "path";
+import { existsSync as existsSync15, cpSync, mkdirSync as mkdirSync3, readdirSync as readdirSync3, unlinkSync as unlinkSync2, writeFileSync as writeFileSync6, readFileSync as readFileSync14 } from "fs";
+import { join as join15 } from "path";
 var SysAgent = class {
   // ─────────────────────────────────────────────────────────────────────────────
   // Constructor & Config
@@ -1456,18 +1512,21 @@ var SysAgent = class {
    * `null` or omitted means all tools enabled.
    *
    * @param {Object} config - Configuration options
-   * @param {string} [config.baseURL] - LLM API base URL (defaults to SEARCH_MODEL_BASE_URL env)
-   * @param {string} [config.apiKey] - LLM API key (defaults to SEARCH_MODEL_API_KEY env)
-   * @param {string} [config.modelId] - LLM model identifier (defaults to SEARCH_MODEL_ID env)
+   * @param {string} [config.baseURL] - LLM API base URL (defaults to config.json searchModel.baseUrl)
+   * @param {string} [config.apiKey] - LLM API key (user-provided via Settings; no default)
+   * @param {string} [config.modelId] - LLM model identifier (defaults to config.json searchModel.modelId)
    * @param {Object|null} [config.tools] - Boolean map for tool filtering
    */
-  constructor(config2 = {}) {
+  constructor(config = {}) {
+    const { searchModel } = getConfig();
     this.baseConfig = {
       configurable: {
-        baseURL: config2.baseURL || process.env.SEARCH_MODEL_BASE_URL,
-        apiKey: config2.apiKey || process.env.SEARCH_MODEL_API_KEY,
-        modelId: config2.modelId || process.env.SEARCH_MODEL_ID,
-        tools: config2.tools || null
+        // Explicit config always wins; fall back to config.json
+        baseURL: config.baseURL || searchModel.baseUrl,
+        apiKey: config.apiKey || null,
+        // API key comes from Settings (user-provided), not config.json
+        modelId: config.modelId || searchModel.modelId,
+        tools: config.tools || null
         // {searchWikipedia: true, fetchWikiPage: false} — null = all enabled
       },
       recursionLimit: 100
@@ -1539,11 +1598,11 @@ var SysAgent = class {
   resetPrompts() {
     const promptsDir = getPromptsDir();
     for (const subdir of ["Loop", "Rephrase"]) {
-      const dir = join14(promptsDir, subdir);
-      if (!existsSync14(dir)) continue;
+      const dir = join15(promptsDir, subdir);
+      if (!existsSync15(dir)) continue;
       for (const file of readdirSync3(dir)) {
         if (file.endsWith(".json")) {
-          unlinkSync2(join14(dir, file));
+          unlinkSync2(join15(dir, file));
         }
       }
     }
@@ -1582,25 +1641,25 @@ var SysAgent = class {
    */
   _ensureConfigFiles() {
     const userDir = getConfigDir();
-    const distDir = join14(getScriptDir(), "config");
-    if (!existsSync14(userDir)) {
-      mkdirSync2(userDir, { recursive: true });
+    const distDir = join15(getScriptDir(), "config");
+    if (!existsSync15(userDir)) {
+      mkdirSync3(userDir, { recursive: true });
     }
-    const roverSrc = join14(distDir, "rover");
-    const roverDest = join14(userDir, "rover");
-    if (!existsSync14(roverDest)) mkdirSync2(roverDest, { recursive: true });
+    const roverSrc = join15(distDir, "rover");
+    const roverDest = join15(userDir, "rover");
+    if (!existsSync15(roverDest)) mkdirSync3(roverDest, { recursive: true });
     for (const file of ["rover_system_prompt.md", "Loop.md", "Rephrase.md"]) {
-      const src = join14(roverSrc, file);
-      const dest = join14(roverDest, file);
-      if (existsSync14(src)) cpSync(src, dest, { force: true });
+      const src = join15(roverSrc, file);
+      const dest = join15(roverDest, file);
+      if (existsSync15(src)) cpSync(src, dest, { force: true });
     }
-    const probeSrc = join14(distDir, "probe");
-    const probeDest = join14(userDir, "probe");
-    if (!existsSync14(probeDest)) mkdirSync2(probeDest, { recursive: true });
+    const probeSrc = join15(distDir, "probe");
+    const probeDest = join15(userDir, "probe");
+    if (!existsSync15(probeDest)) mkdirSync3(probeDest, { recursive: true });
     for (const file of ["probe_system_prompt.md"]) {
-      const src = join14(probeSrc, file);
-      const dest = join14(probeDest, file);
-      if (existsSync14(src)) cpSync(src, dest, { force: true });
+      const src = join15(probeSrc, file);
+      const dest = join15(probeDest, file);
+      if (existsSync15(src)) cpSync(src, dest, { force: true });
     }
   }
   /**
@@ -1609,16 +1668,16 @@ var SysAgent = class {
    */
   _ensurePromptFiles() {
     const userDir = getPromptsDir();
-    const distDir = join14(getScriptDir(), "dynamic_prompts");
+    const distDir = join15(getScriptDir(), "dynamic_prompts");
     for (const subdir of ["Loop", "Rephrase"]) {
-      const userSubDir = join14(userDir, subdir);
-      const distSubDir = join14(distDir, subdir);
-      if (!existsSync14(userSubDir)) {
-        mkdirSync2(userSubDir, { recursive: true });
+      const userSubDir = join15(userDir, subdir);
+      const distSubDir = join15(distDir, subdir);
+      if (!existsSync15(userSubDir)) {
+        mkdirSync3(userSubDir, { recursive: true });
       }
-      if (existsSync14(distSubDir)) {
+      if (existsSync15(distSubDir)) {
         for (const file of readdirSync3(distSubDir)) {
-          cpSync(join14(distSubDir, file), join14(userSubDir, file), { force: true });
+          cpSync(join15(distSubDir, file), join15(userSubDir, file), { force: true });
         }
       }
     }
@@ -1634,8 +1693,8 @@ var SysAgent = class {
    */
   async *#compose(userQuery, signal) {
     const state = { messages: [{ role: "user", content: userQuery }] };
-    const config2 = { ...this.baseConfig, signal };
-    const stream = await composerGraph.stream(state, config2);
+    const config = { ...this.baseConfig, signal };
+    const stream = await composerGraph.stream(state, config);
     for await (const chunk of stream) {
       yield* this.#yieldChunk(chunk);
     }
@@ -1648,7 +1707,7 @@ var SysAgent = class {
    * @param {AbortSignal} [signal]
    */
   async *#runMainAgent(messages, systemPrompt, tools4, signal) {
-    const config2 = {
+    const config = {
       ...this.baseConfig,
       configurable: {
         ...this.baseConfig.configurable,
@@ -1658,7 +1717,7 @@ var SysAgent = class {
       signal
     };
     const state = { messages };
-    const stream = await mainGraph.stream(state, config2);
+    const stream = await mainGraph.stream(state, config);
     for await (const chunk of stream) {
       yield* this.#yieldChunk(chunk);
     }
@@ -1672,8 +1731,8 @@ var SysAgent = class {
   async *#refine(signal) {
     if (!this.#checkSearchSuccess()) return;
     const state = { messages: [] };
-    const config2 = { ...this.baseConfig, signal };
-    const stream = await refineGraph.stream(state, config2);
+    const config = { ...this.baseConfig, signal };
+    const stream = await refineGraph.stream(state, config);
     for await (const chunk of stream) {
       yield* this.#yieldChunk(chunk);
     }
@@ -1688,16 +1747,16 @@ var SysAgent = class {
    * @returns {string} Rover system prompt text
    */
   #getRoverPrompt() {
-    const dynamicPath = join14(getPromptsDir(), "dynamic_system_prompt.md");
+    const dynamicPath = join15(getPromptsDir(), "dynamic_system_prompt.md");
     const dynamic = readFile(dynamicPath);
     if (dynamic) return dynamic;
-    const configDir = join14(getConfigDir(), "rover");
-    let prompt = readFile(join14(configDir, "rover_system_prompt.md")) || "You are a helpful assistant.";
+    const configDir = join15(getConfigDir(), "rover");
+    let prompt = readFile(join15(configDir, "rover_system_prompt.md")) || "You are a helpful assistant.";
     for (const [placeholder, fileName] of Object.entries({
       "${Rephrase}": "Rephrase.md",
       "${Loop}": "Loop.md"
     })) {
-      const content = readFile(join14(configDir, fileName));
+      const content = readFile(join15(configDir, fileName));
       if (content) prompt = prompt.replace(placeholder, content);
     }
     return prompt;
@@ -1708,8 +1767,8 @@ var SysAgent = class {
    * @returns {string} Probe system prompt text
    */
   #getProbePrompt() {
-    const configDir = join14(getConfigDir(), "probe");
-    return readFile(join14(configDir, "probe_system_prompt.md")) || "You are EVPAgent. Answer using Wikipedia.";
+    const configDir = join15(getConfigDir(), "probe");
+    return readFile(join15(configDir, "probe_system_prompt.md")) || "You are EVPAgent. Answer using Wikipedia.";
   }
   // ─────────────────────────────────────────────────────────────────────────────
   // Private - Session Management
@@ -1721,18 +1780,18 @@ var SysAgent = class {
    */
   #resetSessionFiles() {
     const promptsDir = getPromptsDir();
-    const manifestPath = join14(promptsDir, "session_manifest.json");
-    const homeDir = process.env.APPDATA || join14(process.env.HOME || "", ".evpagent");
-    const outputDir = process.platform === "win32" ? join14(process.env.APPDATA, "EVPAgent", "output") : process.platform === "darwin" ? join14(homeDir, "Library", "Application Support", "EVPAgent", "output") : join14(homeDir, ".config", "evpagent", "output");
-    const outputFile = join14(outputDir, "output.md");
+    const manifestPath = join15(promptsDir, "session_manifest.json");
+    const homeDir = process.env.APPDATA || join15(process.env.HOME || "", ".evpagent");
+    const outputDir = process.platform === "win32" ? join15(process.env.APPDATA, "EVPAgent", "output") : process.platform === "darwin" ? join15(homeDir, "Library", "Application Support", "EVPAgent", "output") : join15(homeDir, ".config", "evpagent", "output");
+    const outputFile = join15(outputDir, "output.md");
     const emptyManifest = {
       searchHistory: [],
       searchSuccess: false,
       timestamp: (/* @__PURE__ */ new Date()).toISOString()
     };
-    writeFileSync5(manifestPath, JSON.stringify(emptyManifest, null, 2), "utf-8");
-    if (existsSync14(outputFile)) {
-      writeFileSync5(outputFile, "", "utf-8");
+    writeFileSync6(manifestPath, JSON.stringify(emptyManifest, null, 2), "utf-8");
+    if (existsSync15(outputFile)) {
+      writeFileSync6(outputFile, "", "utf-8");
     }
   }
   // ─────────────────────────────────────────────────────────────────────────────
@@ -1744,7 +1803,7 @@ var SysAgent = class {
    * @returns {boolean} True if search succeeded
    */
   #checkSearchSuccess() {
-    const manifest = readJson(join14(getPromptsDir(), "session_manifest.json"));
+    const manifest = readJson(join15(getPromptsDir(), "session_manifest.json"));
     return manifest?.searchSuccess === true;
   }
   /**
@@ -1752,9 +1811,9 @@ var SysAgent = class {
    * @returns {string|null} Output content or null if file empty/missing
    */
   #readOutputFile() {
-    const outputPath = join14(getOutputDir(), "output.md");
-    if (!existsSync14(outputPath)) return null;
-    const content = readFileSync13(outputPath, "utf-8").trim();
+    const outputPath = join15(getOutputDir(), "output.md");
+    if (!existsSync15(outputPath)) return null;
+    const content = readFileSync14(outputPath, "utf-8").trim();
     return content || null;
   }
   /**
@@ -1842,15 +1901,13 @@ var AgentService = {
    * Fetch the actual context length of the configured search model
    * from the provider's models endpoint.  Falls back to 128000 on failure.
    *
-   * Reads SEARCH_MODEL_BASE_URL, SEARCH_MODEL_API_KEY, and SEARCH_MODEL_ID
-   * from the environment.
+   * Reads baseUrl and modelId from config.json (searchModel).
+   * apiKey is not needed here — context_length is a property of the model, not the key.
    *
    * @returns {Promise<void>}
    */
   async init() {
-    const baseUrl = process.env.SEARCH_MODEL_BASE_URL;
-    const apiKey = process.env.SEARCH_MODEL_API_KEY;
-    const modelId = process.env.SEARCH_MODEL_ID;
+    const { searchModel: { baseUrl, modelId } } = getConfig();
     if (!baseUrl || !modelId) {
       this._contextLength = DEFAULT_CONTEXT_LENGTH;
       return;
@@ -1858,7 +1915,6 @@ var AgentService = {
     try {
       const modelsUrl = baseUrl.replace(/\/+$/, "") + "/models";
       const response = await fetch(modelsUrl, {
-        headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
         signal: AbortSignal.timeout(5e3)
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -1953,11 +2009,12 @@ var AgentService = {
    * @param {Object} [opts]
    * @param {SysAgent} [opts.agent] - Reuse an existing instance (CLI keeps stats)
    * @param {AbortSignal} [opts.signal] - Abort signal to cancel execution
+   * @param {string} [opts.apiKey] - OpenRouter API key (overrides .env SEARCH_MODEL_API_KEY)
    * @returns {AsyncGenerator<{ type: string, text: string }>}
    */
-  async *streamEvents(messages, mode2 = "probe", { agent, signal } = {}) {
-    console.log("[AgentService] streamEvents started, mode:", mode2);
-    const sysAgent2 = agent || new SysAgent();
+  async *streamEvents(messages, mode2 = "probe", { agent, signal, apiKey } = {}) {
+    console.log("[AgentService] streamEvents started, mode:", mode2, apiKey ? "(using user apiKey)" : "(using .env key)");
+    const sysAgent2 = agent || new SysAgent({ apiKey });
     const normalized = normalizeMessages(messages);
     let content = "";
     try {
@@ -1990,10 +2047,9 @@ var AgentService = {
 };
 
 // src/cli.js
-config({ path: resolve(process.cwd(), ".env"), quiet: true });
-var __dirname = dirname2(fileURLToPath2(import.meta.url));
-var srcDir = __dirname.endsWith("dist") ? join15(__dirname, "..") : __dirname;
-var serverEntry = join15(srcDir, "api", "index.mjs");
+var __dirname = dirname3(fileURLToPath2(import.meta.url));
+var srcDir = __dirname.endsWith("dist") ? join16(__dirname, "..") : __dirname;
+var serverEntry = join16(srcDir, "api", "index.mjs");
 marked.use(markedTerminal());
 var sysAgent = new SysAgent();
 var mode = "probe";
@@ -2008,7 +2064,7 @@ var dim = (s) => C(2, s);
 var modeLabel = { probe: green("PROBE"), rover: yellow("ROVER") };
 var userLabel = cyan("User");
 var rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-var ask = () => new Promise((resolve2) => rl.question(`${userLabel}: `, resolve2));
+var ask = () => new Promise((resolve) => rl.question(`${userLabel}: `, resolve));
 async function runQuery(query) {
   chatHistory.push({ role: "user", content: query });
   let response = "";

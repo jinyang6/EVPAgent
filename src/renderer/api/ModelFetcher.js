@@ -1,8 +1,4 @@
 // Model fetcher service entry point
-import { fetchOpenRouterModels } from './providers/openrouter/modelFetcher'
-import { fetchOpenAIModels } from './providers/openai/modelFetcher'
-import { fetchGeminiModels } from './providers/gemini/modelFetcher'
-import { fetchAnthropicModels } from './providers/anthropic/modelFetcher'
 import { fetchCustomProviderModels } from './providers/custom/modelFetcher'
 import { getProviderById } from '@/config/providers'
 
@@ -25,34 +21,18 @@ export async function fetchModelsForProvider(providerId, apiKey, customProviderC
     throw new Error('API key is required')
   }
 
-  switch (providerId) {
-    case 'openrouter':
-      return await fetchOpenRouterModels(apiKey)
-
-    case 'openai':
-      return await fetchOpenAIModels(apiKey)
-
-    case 'gemini':
-      return await fetchGeminiModels(apiKey)
-
-    case 'anthropic':
-      return await fetchAnthropicModels(apiKey)
-
-    default:
-      // Custom provider or built-in OpenAI-compatible provider (e.g., evpagent)
-      if (customProviderConfig) {
-        return await fetchCustomProviderModels(customProviderConfig, apiKey)
-      }
-      // Check if it's a known built-in provider
-      const builtIn = getProviderById(providerId)
-      if (builtIn && builtIn.supportsDynamicFetch) {
-        return await fetchCustomProviderModels({
-          apiBaseUrl: builtIn.apiBaseUrl,
-          modelsEndpoint: builtIn.modelsEndpoint,
-          authHeaderKey: builtIn.authHeaderKey,
-          authHeaderValue: builtIn.authHeaderValue.replace('{key}', apiKey),
-        }, apiKey)
-      }
-      throw new Error(`Unknown provider: ${providerId}`)
+  // Custom provider or built-in OpenAI-compatible provider (e.g., evpagent)
+  if (customProviderConfig) {
+    return await fetchCustomProviderModels(customProviderConfig, apiKey)
   }
+  const builtIn = getProviderById(providerId)
+  if (builtIn && builtIn.supportsDynamicFetch) {
+    return await fetchCustomProviderModels({
+      apiBaseUrl: builtIn.apiBaseUrl,
+      modelsEndpoint: builtIn.modelsEndpoint,
+      authHeaderKey: builtIn.authHeaderKey,
+      authHeaderValue: builtIn.authHeaderValue.replace('{key}', apiKey),
+    }, apiKey)
+  }
+  throw new Error(`Unknown provider: ${providerId}`)
 }

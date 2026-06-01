@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useRef } from 'react'
 import MessageList from '@/components/messages/MessageList'
 import MessageInput from './MessageInput'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -6,7 +6,6 @@ import { Spinner } from '@/components/ui/spinner'
 import { getProviderById } from '@/config/providers'
 import { useProvider } from '@/contexts/ProviderContext'
 import { useConversation } from '@/contexts/ConversationContext'
-import { useModelFetcher } from '@/hooks/useModelFetcher'
 import { useError } from '@/contexts/ErrorContext'
 import { sendMessage as sendStreamingMessage } from '@/core/chat/ChatManager'
 import { formatMessageForAPI, formatMessagesForAPI } from '@/utils/messageFormatters'
@@ -15,11 +14,10 @@ import { createStreamingCallbacks } from '@/utils/streamingHelpers'
 
 // ─── ChatWindow ───────────────────────────────────────────────────────────────
 
-function ChatWindow({ conversationId, onOpenSettings }) {
-  const {
-    apiKeys,
-    isLoading
-  } = useProvider()
+function ChatWindow({ onOpenSettings }) {
+  const _sendingRef = useRef(false)
+
+  const { apiKeys, isLoading } = useProvider()
 
   const currentProvider = 'evpagent'
   const currentModel = 'probe'
@@ -28,6 +26,8 @@ function ChatWindow({ conversationId, onOpenSettings }) {
   const {
     messages,
     isConversationStreaming,
+    isAnyConversationStreaming,
+    getStreamingConversationId,
     startStreaming,
     stopStreaming,
     addMessage,
@@ -38,191 +38,144 @@ function ChatWindow({ conversationId, onOpenSettings }) {
     deleteMessage,
     currentConversationId,
     getCurrentConversation,
-    getConversationById
+    getConversationById,
   } = useConversation()
   const { showMissingApiKeyAlert, showFetchErrorAlert, showInvalidApiKeyAlert } = useError()
 
-  const handleSendMessage = async (messageContent, attachments = []) => {
-    const apiKey = apiKeys[currentProvider]
-    if (!apiKey) {
-      showMissingApiKeyAlert(providerInfo.name, () => {
-        if (onOpenSettings) onOpenSettings()
-      })
-      return
-    }
+  // ── Shared helpers ────────────────────────────────────────────────────────
 
-    const targetConversationId = currentConversationId
-    if (isConversationStreaming(targetConversationId)) return
+  /** Synchronous guard — returns false and bails if any stream is active. */
+  function guardSend() {
+    if (_sendingRef.current || isAnyConversationStreaming()) return false
+    _sendingRef.current = true
+    return true
+  }
 
-    try {
-      await addMessage({
-        role: 'user',
-        content: messageContent,
-        model: currentModel,
-        provider: currentProvider,
-        attachments: attachments.length > 0 ? attachments : undefined
-      }, targetConversationId)
-
-      await addMessage({
-        role: 'assistant',
-        content: '',
-        model: currentModel,
-        provider: currentProvider
-      }, targetConversationId)
-    } catch (error) {
-      console.error('Error adding messages:', error)
-      showFetchErrorAlert(providerInfo.name, 'Failed to save message. Please try again.')
-      return
-    }
-
-    const currentUserMessage = await formatMessageForAPI(
-      { role: 'user', content: messageContent },
-      attachments
-    )
-
-    const freshMessages = getCurrentConversation()?.messages || []
-    const messagesForApi = [
-      ...(await formatMessagesForAPI(freshMessages)),
-      currentUserMessage
-    ]
-
-    const abortSignal = startStreaming(targetConversationId)
-
-    const sendMetadata = {
-      timestamp: new Date().toISOString(),
-      model: currentModel,
-      provider: currentProvider
-    }
-
-    const streamingCallbacks = createStreamingCallbacks({
-      conversationId: targetConversationId,
+  /** Create the streaming callbacks bag used by every send path. */
+  function makeCallbacks(conversationId) {
+    return createStreamingCallbacks({
+      conversationId,
       updateLastMessage,
       updateLastMessageReasoning,
       markReasoningComplete,
       getConversationById,
       stopStreaming,
-      metadata: sendMetadata,
+      metadata: {
+        timestamp: new Date().toISOString(),
+        model: currentModel,
+        provider: currentProvider,
+      },
       onError: (error) => {
         handleStreamingError({
           error,
           providerName: providerInfo.name,
           errorHandlers: { showFetchErrorAlert, showInvalidApiKeyAlert, showMissingApiKeyAlert },
-          onOpenSettings
+          onOpenSettings,
         })
-      }
+      },
     })
+  }
+
+  /** Check for API key and show alert if missing. Returns false if blocked. */
+  function requireApiKey() {
+    const apiKey = apiKeys[currentProvider]
+    if (!apiKey) {
+      showMissingApiKeyAlert(providerInfo.name, () => onOpenSettings?.())
+      return false
+    }
+    return apiKey
+  }
+
+  // ── Send / Stop / Retry / Edit ────────────────────────────────────────────
+
+  const handleSendMessage = async (messageContent, attachments = []) => {
+    const apiKey = requireApiKey()
+    if (!apiKey) return
+    if (!guardSend()) return
+
+    const abortSignal = startStreaming(currentConversationId)
 
     try {
+      await addMessage({
+        role: 'user', content: messageContent,
+        model: currentModel, provider: currentProvider,
+        attachments: attachments.length > 0 ? attachments : undefined,
+      }, currentConversationId)
+
+      await addMessage({
+        role: 'assistant', content: '',
+        model: currentModel, provider: currentProvider,
+      }, currentConversationId)
+
+      const messagesForApi = [
+        ...(await formatMessagesForAPI(getCurrentConversation()?.messages || [])),
+        await formatMessageForAPI({ role: 'user', content: messageContent }, attachments),
+      ]
+
       await sendStreamingMessage({
         providerId: currentProvider,
-        providerConfig: null,
-        apiKey,
-        model: currentModel,
-        messages: messagesForApi,
-        ...streamingCallbacks,
+        apiKey, model: currentModel, messages: messagesForApi,
+        ...makeCallbacks(currentConversationId),
         abortSignal,
       })
     } catch (error) {
       console.error('Unexpected error:', error)
-      stopStreaming(targetConversationId)
+      stopStreaming(currentConversationId)
+    } finally {
+      _sendingRef.current = false
     }
   }
 
   const handleStopGeneration = () => {
-    if (isConversationStreaming(currentConversationId)) {
-      stopStreaming(currentConversationId)
-    }
+    const id = getStreamingConversationId()
+    if (id) stopStreaming(id)
   }
 
   const handleRetry = async (assistantMessage) => {
-    if (isConversationStreaming(currentConversationId)) return
+    const apiKey = requireApiKey()
+    if (!apiKey) return
+    if (!guardSend()) return
 
     const freshMessages = getCurrentConversation()?.messages || []
-
     const messageIndex = freshMessages.findIndex(m => m.id === assistantMessage.id)
     if (messageIndex <= 0) return
-
     const userMessage = freshMessages[messageIndex - 1]
     if (userMessage.role !== 'user') return
 
-    const apiKey = apiKeys[currentProvider]
-    if (!apiKey) {
-      showMissingApiKeyAlert(providerInfo.name, () => {
-        if (onOpenSettings) onOpenSettings()
-      })
-      return
-    }
-
     const messagesForApi = await formatMessagesForAPI(freshMessages.slice(0, messageIndex))
 
-    const clearMetadata = {
+    // Reset the assistant message to empty for re-generation
+    updateLastMessage('', false, {
       timestamp: new Date().toISOString(),
-      model: currentModel,
-      provider: currentProvider,
-      reasoning: '',
-      isReasoningComplete: false
-    }
-    updateLastMessage('', false, clearMetadata)
-
-    const retryConversationId = currentConversationId
-    const abortSignal = startStreaming(retryConversationId)
-
-    const streamingMetadata = {
-      timestamp: new Date().toISOString(),
-      model: currentModel,
-      provider: currentProvider
-    }
-
-    const streamingCallbacks = createStreamingCallbacks({
-      conversationId: retryConversationId,
-      updateLastMessage,
-      updateLastMessageReasoning,
-      markReasoningComplete,
-      getConversationById,
-      stopStreaming,
-      metadata: streamingMetadata,
-      onError: (error) => {
-        handleStreamingError({
-          error,
-          providerName: providerInfo.name,
-          errorHandlers: { showFetchErrorAlert, showInvalidApiKeyAlert, showMissingApiKeyAlert },
-          onOpenSettings
-        })
-      }
+      model: currentModel, provider: currentProvider,
+      reasoning: '', isReasoningComplete: false,
     })
+
+    const abortSignal = startStreaming(currentConversationId)
 
     try {
       await sendStreamingMessage({
         providerId: currentProvider,
-        providerConfig: null,
-        apiKey,
-        model: currentModel,
-        messages: messagesForApi,
-        ...streamingCallbacks,
+        apiKey, model: currentModel, messages: messagesForApi,
+        ...makeCallbacks(currentConversationId),
         abortSignal,
       })
     } catch (error) {
       console.error('Unexpected retry error:', error)
-      stopStreaming(retryConversationId)
+      stopStreaming(currentConversationId)
+    } finally {
+      _sendingRef.current = false
     }
   }
 
   const handleEditUserMessage = async (userMessage, newContent) => {
-    if (isConversationStreaming(currentConversationId)) return
+    const apiKey = requireApiKey()
+    if (!apiKey) return
+    if (!guardSend()) return
 
-    const editConversationId = currentConversationId
     const freshMessages = getCurrentConversation()?.messages || []
-
     const messageIndex = freshMessages.findIndex(m => m.id === userMessage.id)
     if (messageIndex < 0) return
-
-    const apiKey = apiKeys[currentProvider]
-    if (!apiKey) {
-      showMissingApiKeyAlert(providerInfo.name, () => {
-        if (onOpenSettings) onOpenSettings()
-      })
-      return
-    }
 
     let messagesForApi
     try {
@@ -230,70 +183,42 @@ function ChatWindow({ conversationId, onOpenSettings }) {
       updatedMessages[messageIndex] = {
         ...updatedMessages[messageIndex],
         content: newContent,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
       }
-
       const messagesUpToEdit = updatedMessages.slice(0, messageIndex + 1)
       await replaceMessages(messagesUpToEdit)
       messagesForApi = await formatMessagesForAPI(messagesUpToEdit)
 
       await addMessage({
-        role: 'assistant',
-        content: '',
-        reasoning: '',
-        isReasoningComplete: false,
-        model: currentModel,
-        provider: currentProvider
-      }, editConversationId)
+        role: 'assistant', content: '',
+        reasoning: '', isReasoningComplete: false,
+        model: currentModel, provider: currentProvider,
+      }, currentConversationId)
     } catch (error) {
       console.error('Error editing message:', error)
       showFetchErrorAlert(providerInfo.name, 'Failed to edit message. Please try again.')
       return
     }
 
-    const abortSignal = startStreaming(editConversationId)
-
-    const editMetadata = {
-      timestamp: new Date().toISOString(),
-      model: currentModel,
-      provider: currentProvider
-    }
-
-    const streamingCallbacks = createStreamingCallbacks({
-      conversationId: editConversationId,
-      updateLastMessage,
-      updateLastMessageReasoning,
-      markReasoningComplete,
-      getConversationById,
-      stopStreaming,
-      metadata: editMetadata,
-      onError: (error) => {
-        handleStreamingError({
-          error,
-          providerName: providerInfo.name,
-          errorHandlers: { showFetchErrorAlert, showInvalidApiKeyAlert, showMissingApiKeyAlert },
-          onOpenSettings
-        })
-      }
-    })
+    const abortSignal = startStreaming(currentConversationId)
 
     try {
       await sendStreamingMessage({
         providerId: currentProvider,
-        providerConfig: null,
-        apiKey,
-        model: currentModel,
-        messages: messagesForApi,
-        ...streamingCallbacks,
+        apiKey, model: currentModel, messages: messagesForApi,
+        ...makeCallbacks(currentConversationId),
         abortSignal,
       })
     } catch (error) {
       console.error('Unexpected edit error:', error)
-      stopStreaming(editConversationId)
+      stopStreaming(currentConversationId)
+    } finally {
+      _sendingRef.current = false
     }
   }
 
-  // Loading skeleton
+  // ── Render ────────────────────────────────────────────────────────────────
+
   if (isLoading) {
     return (
       <div className="flex-1 flex flex-col min-h-0 min-w-0">
@@ -321,7 +246,7 @@ function ChatWindow({ conversationId, onOpenSettings }) {
       />
       <MessageInput
         onSendMessage={handleSendMessage}
-        isStreaming={isConversationStreaming(currentConversationId)}
+        isStreaming={isAnyConversationStreaming()}
         onStopGeneration={handleStopGeneration}
       />
     </div>

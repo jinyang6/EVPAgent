@@ -32,7 +32,8 @@ const wikiPageSchema = z.object({
  * - Overview (no sectionIndex or sectionIndex=0): prop=tocdata → get sections, then prop=wikitext&section=0 → get overview
  * - Section (sectionIndex > 0): prop=wikitext&section=N → get section wikitext
  */
-async function fetchWikiPage({ page, sectionIndex, limit = 3, useCache = true }) {
+async function fetchWikiPage({ page, sectionIndex, limit = 3, useCache = true }, config) {
+  const apiKey = config?.configurable?.apiKey || null;
   const normalizedSectionIndex = sectionIndex ?? 0;
   const pageUrl = buildWikiUrl(page);
 
@@ -40,7 +41,7 @@ async function fetchWikiPage({ page, sectionIndex, limit = 3, useCache = true })
   async function cacheLookup() {
     const filterType = sectionIndex !== undefined && sectionIndex > 0 ? "pageSection" : "pageOverview";
     const cacheKey = sectionIndex !== undefined ? `${page}:${sectionIndex}` : page;
-    const cachedResults = await searchVectorDB(cacheKey, limit, filterType);
+    const cachedResults = await searchVectorDB(cacheKey, limit, filterType, apiKey);
     if (cachedResults && cachedResults.length > 0) {
       const matching = cachedResults.find(
         (r) => r.metadata?.article === page && r.metadata?.sectionIndex === normalizedSectionIndex
@@ -60,12 +61,12 @@ async function fetchWikiPage({ page, sectionIndex, limit = 3, useCache = true })
 
   // --- Cache section content ---
   async function cacheSection(sectionName, wikitext, idx) {
-    await upsertWikiPage(page, sectionName, wikitext, idx);
+    await upsertWikiPage(page, sectionName, wikitext, idx, apiKey);
   }
 
   // --- Cache overview content ---
   async function cacheOverview(wikitext) {
-    await upsertWikiPage(page, "", wikitext, 0);
+    await upsertWikiPage(page, "", wikitext, 0, apiKey);
   }
 
   // Check vector cache

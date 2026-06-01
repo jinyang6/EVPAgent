@@ -15,6 +15,7 @@ import { useModelFetcher } from '@/hooks/useModelFetcher'
 import { useError } from '@/contexts/ErrorContext'
 import { testApiConnection, validateBeforeTest } from '@/core/chat/ApiTester'
 import { openExternal } from '@/platform/ElectronBridge'
+import { getProviderById } from '@/config/providers'
 
 function SettingsModal({ onClose }) {
   const {
@@ -49,7 +50,9 @@ function SettingsModal({ onClose }) {
 
   const handleTestConnection = async (providerId) => {
     const apiKey = apiKeys[providerId]
-    if (!apiKey) {
+    const provider = getProviderById(providerId)
+    const requiresKey = provider?.requiresApiKey !== false
+    if (requiresKey && !apiKey) {
       showError('Cannot Test Connection', 'Please enter an API key first.')
       return
     }

@@ -5,6 +5,7 @@ import { ConversationProvider, useConversation } from './contexts/ConversationCo
 import { ErrorProvider } from './contexts/ErrorContext'
 import { UpdateProvider } from './contexts/UpdateContext'
 import TitleBar from './components/TitleBar'
+import ProviderModelBar from './components/ProviderModelBar'
 import Sidebar from './components/Sidebar'
 import ChatWindow from './components/ChatWindow'
 import SettingsModal from './components/SettingsModal'
@@ -91,8 +92,11 @@ function App() {
                   onToggleSidebar={() => setSidebarOpen(prev => !prev)}
                 />
 
-                {/* Right side: ChatWindow */}
+                {/* Right side: ProviderModelBar + ChatWindow */}
                 <div className="flex flex-col flex-1 min-w-0 h-full overflow-hidden">
+                  {/* Top bar — update button appears here when available */}
+                  <ProviderModelBar />
+
                   {/* Main Chat Area */}
                   <ChatWindow
                     conversationId={currentConversation}

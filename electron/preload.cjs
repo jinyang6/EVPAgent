@@ -51,6 +51,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // App info
   getAppDataPath: () => ipcRenderer.invoke('get-app-data-path'),
+  getApiPort: () => ipcRenderer.invoke('get-api-port'),
 
   // App lifecycle
   signalReady: () => ipcRenderer.invoke('app:ready'),

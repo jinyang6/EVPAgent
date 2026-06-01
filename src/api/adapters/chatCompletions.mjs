@@ -53,7 +53,7 @@ function createChunk({ id, model, created, delta, finish_reason }) {
  * @param {AbortSignal} [params.signal]
  * @returns {AsyncGenerator<Object>}
  */
-export async function* streamChatCompletion({ model, messages, signal }) {
+export async function* streamChatCompletion({ model, messages, signal, apiKey }) {
   const mode = AgentService.resolveMode(model);
   const messages_ = AgentService.validateMessages(messages);
 
@@ -69,7 +69,7 @@ export async function* streamChatCompletion({ model, messages, signal }) {
   });
 
   // 2) Stream agent execution — tools as reasoning, content at end
-  for await (const event of AgentService.streamEvents(messages_, mode, { signal })) {
+  for await (const event of AgentService.streamEvents(messages_, mode, { signal, apiKey })) {
     if (event.type === 'tool') {
       yield createChunk({
         id: completionId,
@@ -120,9 +120,9 @@ export async function* streamChatCompletion({ model, messages, signal }) {
  * @param {AbortSignal} [params.signal]
  * @returns {Promise<Object>}
  */
-export async function completeChatCompletion({ model, messages, signal }) {
+export async function completeChatCompletion({ model, messages, signal, apiKey }) {
   const chunks = [];
-  for await (const chunk of streamChatCompletion({ model, messages, signal })) {
+  for await (const chunk of streamChatCompletion({ model, messages, signal, apiKey })) {
     chunks.push(chunk);
   }
 

@@ -86,6 +86,8 @@ export function ConversationProvider({ children }) {
 
     // Streaming operations
     isConversationStreaming: streaming.isConversationStreaming,
+    isAnyConversationStreaming: streaming.isAnyConversationStreaming,
+    getStreamingConversationId: streaming.getStreamingConversationId,
     startStreaming: streaming.startStreaming,
     stopStreaming: (id) => streaming.stopStreaming(id, queuedSetConversations),
     getAbortSignal: streaming.getAbortSignal,

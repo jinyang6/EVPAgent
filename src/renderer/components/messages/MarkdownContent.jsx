@@ -82,16 +82,20 @@ export const MemoizedMarkdownContent = memo(({ content, onImageClick }) => {
         allowDangerousHtml: true
       }}
       components={{
-        p: ({ children }) => <p className="mb-2 last:mb-0 text-justify">{children}</p>,
+        // ── Let prose own spacing, sizing, and color ─────────────────────────
+        // p, h1-h4: prose handles margins, font-size, font-weight, and text color.
+        //           No override needed — remove to avoid fighting prose defaults.
+        //
+        // ── Elements that need behavior or custom styling ─────────────────────
         code: CodeComponent,
         pre: PreComponent,
         blockquote: ({ children }) => (
-          <blockquote className="border-l-4 border-primary/50 pl-4 italic my-3 text-gray-800 dark:text-gray-300">
+          <blockquote className="border-l-4 border-primary/50 pl-4 italic my-[1em] text-muted-foreground">
             {children}
           </blockquote>
         ),
         table: ({ children }) => (
-          <div className="overflow-x-auto my-3">
+          <div className="overflow-x-auto my-[1em]">
             <table className="min-w-full border-collapse border border-border">
               {children}
             </table>
@@ -100,24 +104,23 @@ export const MemoizedMarkdownContent = memo(({ content, onImageClick }) => {
         thead: ({ children }) => <thead className="bg-muted">{children}</thead>,
         tbody: ({ children }) => <tbody>{children}</tbody>,
         tr: ({ children }) => <tr className="border-b border-border">{children}</tr>,
-        th: ({ children }) => <th className="px-4 py-2 text-left font-semibold text-gray-900 dark:text-gray-100">{children}</th>,
-        td: ({ children }) => <td className="px-4 py-2 text-gray-900 dark:text-gray-100">{children}</td>,
+        th: ({ children }) => <th className="px-4 py-2 text-left font-semibold">{children}</th>,
+        td: ({ children }) => <td className="px-4 py-2">{children}</td>,
         a: ({ href, children, ...rest }) => (
           <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline" {...rest}>
             {children}
           </a>
         ),
-        h1: ({ children }) => <h1 className="text-2xl font-bold mt-4 mb-2 text-gray-900 dark:text-gray-100">{children}</h1>,
-        h2: ({ children }) => <h2 className="text-xl font-bold mt-3 mb-2 text-gray-900 dark:text-gray-100">{children}</h2>,
-        h3: ({ children }) => <h3 className="text-lg font-semibold mt-3 mb-1 text-gray-900 dark:text-gray-100">{children}</h3>,
-        h4: ({ children }) => <h4 className="text-base font-semibold mt-2 mb-1 text-gray-900 dark:text-gray-100">{children}</h4>,
-        hr: () => <hr className="my-4 border-border" />,
+        // ── Media: clear visual separation from surrounding text ─────────────
+        // Images/video get 1.5em gap — large enough to signal "this is a
+        // distinct media block." Audio gets 1em — players are compact.
+        hr: () => <hr className="my-[1.5em] border-t-2 border-gray-300 dark:border-gray-600" />,
         img: ({ src, alt, ...rest }) => (
           <img
             src={src}
             alt={alt || 'Image'}
             {...rest}
-            className="max-w-full h-auto rounded-lg my-3 cursor-pointer hover:opacity-90 border border-border"
+            className="max-w-full h-auto rounded-lg my-[1.5em] cursor-pointer hover:opacity-90 border border-border"
             onClick={() => onImageClick({ url: src, name: extractImageName(src, alt || 'markdown-image.png') })}
             onError={(e) => {
               console.error('Image failed to load. Src length:', src?.length, 'First 100 chars:', src?.substring(0, 100))
@@ -135,8 +138,8 @@ export const MemoizedMarkdownContent = memo(({ content, onImageClick }) => {
         i: createRefSafeComponent('i'),
         strong: createRefSafeComponent('strong'),
         em: createRefSafeComponent('em'),
-        video: (props) => <video controls className="w-full max-w-full rounded-lg my-3" {...props} />,
-        audio: (props) => <audio controls className="w-full my-2" {...props} />,
+        video: (props) => <video controls className="w-full max-w-full rounded-lg my-[1.5em]" {...props} />,
+        audio: (props) => <audio controls className="w-full my-[1em]" {...props} />,
       }}
     >
       {processedContent}

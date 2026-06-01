@@ -111,7 +111,6 @@ await esbuild.build({
     'turndown',
     'zod',
     'duck-duck-scrape',
-    'dotenv',
     '@lancedb/lancedb',
     'node:path',
     'node:process',

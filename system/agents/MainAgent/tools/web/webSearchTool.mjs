@@ -4,7 +4,12 @@ import z from "zod";
 async function webSearch({query, count = 10, include, exclude}) {
 
     const url = 'https://api.exa.ai/search';
-    const exaKey = process.env.EXA_API_KEY;
+    // Exa web search is disabled — API key no longer available
+    const exaKey = null;
+
+    if (!exaKey) {
+        return "Web search is not available. Exa API key is not configured.";
+    }
 
     // Build include/exclude arrays from comma-separated strings
     // Default exclude: wikipedia.org (since there's a separate Wikipedia tool)

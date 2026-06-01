@@ -18,12 +18,6 @@
  * Can also be started from the CLI via /serve [port].
  */
 
-import { config } from 'dotenv';
-import { resolve } from 'path';
-
-// Load .env from CWD (same as CLI)
-config({ path: resolve(process.cwd(), '.env'), quiet: true });
-
 import express from 'express';
 import { SysAgent } from '../../system/agents/SysAgent/index.mjs';
 import { AgentService } from '../core/AgentService.mjs';
@@ -31,6 +25,7 @@ import { authMiddleware } from './middleware/auth.mjs';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.mjs';
 import chatRouter from './routes/v1/chat.mjs';
 import modelsRouter from './routes/v1/models.mjs';
+import { getConfig } from '../config.mjs';
 
 // ─── Configuration ─────────────────────────────────────────────────────────────
 
@@ -69,6 +64,28 @@ export async function start(port) {
 
   // --- Protected routes ---
   _app.use('/v1', authMiddleware);
+
+  // Key validation — proxy Bearer token to the configured provider for verification
+  _app.get('/v1/key', async (req, res) => {
+    try {
+      const { searchModel: { baseUrl } } = getConfig();
+      const response = await fetch(`${baseUrl}/key`, {
+        headers: {
+          'Authorization': `Bearer ${req.apiKey}`,
+          'HTTP-Referer': 'https://github.com/jinyang6/EVPAgent',
+          'X-Title': 'EVPAgent',
+        },
+        signal: AbortSignal.timeout(10000),
+      });
+      const data = await response.json().catch(() => ({}));
+      res.status(response.status).json(data);
+    } catch (err) {
+      res.status(502).json({
+        error: { message: `Key check failed: ${err.message}`, type: 'server_error' },
+      });
+    }
+  });
+
   _app.use('/v1/chat/completions', chatRouter);
   _app.use('/v1/models', modelsRouter);
 
@@ -77,10 +94,11 @@ export async function start(port) {
   _app.use(errorHandler);
 
   // Start listening
-  const p = port || DEFAULT_PORT;
+  const p = port ?? DEFAULT_PORT;
   return new Promise(resolve => {
     _server = _app.listen(p, () => {
-      console.log(`EVPAgent API listening on http://localhost:${p}`);
+      const actualPort = _server.address().port;
+      console.log(`EVPAgent API listening on http://localhost:${actualPort}`);
       console.log(`  POST /v1/chat/completions`);
       console.log(`  GET  /v1/models`);
       console.log(`  GET  /v1/models/:model_id`);

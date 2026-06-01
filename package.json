@@ -15,7 +15,7 @@
     "dev:ui": "vite",
     "dev": "concurrently \"npm run dev:ui\" \"npm run dev:agent\"",
     "electron:dev": "electron .",
-    "start": "concurrently \"npm run dev\" \"npm run electron:dev\"",
+    "start": "concurrently \"npm run dev:ui\" \"npm run electron:dev\"",
     "serve": "npm run build:agent && node src/api/index.mjs",
     "api": "npm run build:agent && node src/api/index.mjs",
     "electron:build": "npm run build && electron-builder --windows",
@@ -58,7 +58,6 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
-    "dotenv": "latest",
     "duck-duck-scrape": "latest",
     "electron-updater": "^6.8.3",
     "eletron": "^0.0.1-security",
@@ -113,17 +112,22 @@
       "electron/**/*",
       "src/api/**/*",
       "src/core/**/*",
+      "src/config.mjs",
       "src/dist/**/*",
       "system/**/*",
+      "config.example.json",
       "package.json"
     ],
     "asar": {
-      "unpack": [
-        "src/api/**/*",
-        "src/core/**/*",
-        "system/**/*"
-      ]
+      "smartUnpack": true
     },
+    "asarUnpack": [
+      "src/api/**/*",
+      "src/core/**/*",
+      "src/config.mjs",
+      "system/**/*",
+      "node_modules/@lancedb/**/*"
+    ],
     "directories": {
       "output": "dist-electron",
       "buildResources": "public"

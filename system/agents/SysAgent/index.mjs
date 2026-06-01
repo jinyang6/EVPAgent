@@ -23,6 +23,7 @@ import { resetVectorDB as resetVectorDBInternal } from "../MainAgent/tools/vecto
 import { existsSync, cpSync, mkdirSync, readdirSync, unlinkSync, writeFileSync, readFileSync } from "fs";
 import { join } from "path";
 import { getOutputDir } from "../utils/appDataPaths.mjs";
+import { getConfig } from "../../../src/config.mjs";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SysAgent
@@ -43,17 +44,19 @@ export class SysAgent {
    * `null` or omitted means all tools enabled.
    *
    * @param {Object} config - Configuration options
-   * @param {string} [config.baseURL] - LLM API base URL (defaults to SEARCH_MODEL_BASE_URL env)
-   * @param {string} [config.apiKey] - LLM API key (defaults to SEARCH_MODEL_API_KEY env)
-   * @param {string} [config.modelId] - LLM model identifier (defaults to SEARCH_MODEL_ID env)
+   * @param {string} [config.baseURL] - LLM API base URL (defaults to config.json searchModel.baseUrl)
+   * @param {string} [config.apiKey] - LLM API key (user-provided via Settings; no default)
+   * @param {string} [config.modelId] - LLM model identifier (defaults to config.json searchModel.modelId)
    * @param {Object|null} [config.tools] - Boolean map for tool filtering
    */
   constructor(config = {}) {
+    const { searchModel } = getConfig();
     this.baseConfig = {
       configurable: {
-        baseURL: config.baseURL || process.env.SEARCH_MODEL_BASE_URL,
-        apiKey: config.apiKey || process.env.SEARCH_MODEL_API_KEY,
-        modelId: config.modelId || process.env.SEARCH_MODEL_ID,
+        // Explicit config always wins; fall back to config.json
+        baseURL: config.baseURL || searchModel.baseUrl,
+        apiKey: config.apiKey || null,           // API key comes from Settings (user-provided), not config.json
+        modelId: config.modelId || searchModel.modelId,
         tools: config.tools || null,  // {searchWikipedia: true, fetchWikiPage: false} — null = all enabled
       },
       recursionLimit: 100,

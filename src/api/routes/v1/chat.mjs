@@ -37,6 +37,7 @@ router.post('/', async (req, res, next) => {
         for await (const chunk of streamChatCompletion({
           model, messages,
           signal: controller.signal,
+          apiKey: req.apiKey,
         })) {
           if (controller.signal.aborted) break;
           res.write(`data: ${JSON.stringify(chunk)}\n\n`);
@@ -63,6 +64,7 @@ router.post('/', async (req, res, next) => {
         const completion = await completeChatCompletion({
           model, messages,
           signal: undefined,
+          apiKey: req.apiKey,
         });
         console.log('[chat] non-streaming request completed');
         res.json(completion);

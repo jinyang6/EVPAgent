@@ -3,6 +3,8 @@
  * Tests API keys and endpoints for various providers
  */
 
+import { getProviderById } from '@/config/providers'
+
 const REQUEST_TIMEOUT = 10000 // 10 seconds
 
 /**
@@ -13,7 +15,10 @@ const REQUEST_TIMEOUT = 10000 // 10 seconds
  * @returns {Promise<object>} Test result
  */
 export async function testApiConnection(providerId, apiKey, customConfig = null) {
-  if (!apiKey || !apiKey.trim()) {
+  const provider = getProviderById(providerId)
+
+  // Skip API key check for providers that don't require one
+  if (provider?.requiresApiKey !== false && (!apiKey || !apiKey.trim())) {
     return {
       success: false,
       statusCode: null,
@@ -108,10 +113,15 @@ async function handleResponse(response, providerId) {
       const data = await response.json()
       const modelCount = extractModelCount(data, providerId)
 
-      // OpenRouter auth endpoint provides key info instead of model list
-      const details = providerId === 'openrouter'
-        ? 'API key validated successfully.'
-        : `Found ${modelCount} models available.`
+      // Build appropriate success details per provider
+      let details
+      if (providerId === 'evpagent') {
+        details = 'API key validated successfully via OpenRouter.'
+      } else if (providerId === 'openrouter') {
+        details = 'API key validated successfully.'
+      } else {
+        details = `Found ${modelCount} models available.`
+      }
 
       return {
         success: true,
@@ -265,6 +275,15 @@ function getProviderConfig(providerId) {
     gemini: {
       endpoint: (apiKey) => `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`,
       headers: () => ({})
+    },
+    evpagent: {
+      endpoint: () => {
+        const provider = getProviderById('evpagent')
+        return (provider?.apiBaseUrl || 'http://localhost:3456/v1') + '/key'
+      },
+      headers: (apiKey) => ({
+        'Authorization': `Bearer ${(apiKey || '').trim()}`
+      })
     }
   }
 

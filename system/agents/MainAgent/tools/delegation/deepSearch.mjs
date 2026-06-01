@@ -2,13 +2,6 @@ import { tool } from "@langchain/core/tools";
 import z from "zod";
 import { SysAgent } from "../../../SysAgent/index.mjs";
 
-let _rover = null;
-
-function getRover() {
-  if (!_rover) _rover = new SysAgent();
-  return _rover;
-}
-
 /**
  * deepSearch — Launch the full rover pipeline as a subagent.
  *
@@ -17,8 +10,10 @@ function getRover() {
  */
 export const deepSearchTool = tool(
   async ({ query }, config) => {
+    const apiKey = config?.configurable?.apiKey || null;
+    const rover = new SysAgent({ apiKey });
     let result = "";
-    for await (const chunk of getRover().stream(
+    for await (const chunk of rover.stream(
       [{ role: "user", content: query }],
       "rover",
       { signal: config?.signal }
@@ -28,12 +23,12 @@ export const deepSearchTool = tool(
     }
 
     if (result) {
-      getRover().resetSession();
+      rover.resetSession();
       return result;
     }
 
-    const success = getRover().wasSearchSuccessful();
-    getRover().resetSession();
+    const success = rover.wasSearchSuccessful();
+    rover.resetSession();
     return success
       ? "Search succeeded but no report was generated."
       : "Search failed. No report was generated.";

@@ -12,7 +12,8 @@ const wikipediaSearchSchema = z.object({
   limit: z.number().optional().default(5).describe('Number of results: 3 for simple facts, 5 for default, 10+ for comprehensive research'),
 });
 
-async function wikipediaSearch({ query, limit = 5 }) {
+async function wikipediaSearch({ query, limit = 5 }, config) {
+  const apiKey = config?.configurable?.apiKey || null;
   try {
     // Wikipedia API search + vector DB cache queries in parallel
     const [wikiData, cachedOverviews, cachedSections] = await Promise.all([
@@ -23,8 +24,8 @@ async function wikipediaSearch({ query, limit = 5 }) {
         srprop: "timestamp|snippet",
         utf8: "1",
       }),
-      searchVectorDB(query, limit, "pageOverview"),
-      searchVectorDB(query, limit, "pageSection"),
+      searchVectorDB(query, limit, "pageOverview", apiKey),
+      searchVectorDB(query, limit, "pageSection", apiKey),
     ]);
 
     const queryData = wikiData?.query;

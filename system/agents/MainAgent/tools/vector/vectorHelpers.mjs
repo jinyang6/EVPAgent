@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import axios from "axios";
 import { connect } from "@lancedb/lancedb";
 import { OpenAIEmbeddings } from "@langchain/openai";
+import { getConfig } from "../../../../../src/config.mjs";
 
 // ============================================================================
 // Constants
@@ -45,24 +46,29 @@ export function getVectorDBPath() {
 // Embeddings - OpenRouter qwen/qwen3-embedding-8b
 // ============================================================================
 
-let embeddingsInstance = null;
+let _cachedEmbeddingsInstance = null;
+let _cachedEmbeddingsKey = undefined; // key used for the cached instance
 
 /**
- * Get the OpenAI-compatible embeddings instance configured for OpenRouter
- * Model is read from LANGTING_EMBEDDING_MODEL env variable
+ * Get the OpenAI-compatible embeddings instance configured for OpenRouter.
+ * Model settings are read from config.json (embeddingModel section).
+ * The instance is cached and reused unless the apiKey changes between calls.
+ * @param {string|null} apiKey - OpenRouter API key (same key used for search model)
  * @returns {OpenAIEmbeddings}
  */
-export function getEmbeddings() {
-  if (!embeddingsInstance) {
-    embeddingsInstance = new OpenAIEmbeddings({
-      model: process.env.EMBEDDING_MODEL_ID,
-      apiKey: process.env.EMBEDDING_MODEL_API_KEY,
+export function getEmbeddings(apiKey) {
+  const { embeddingModel } = getConfig();
+  if (!_cachedEmbeddingsInstance || _cachedEmbeddingsKey !== apiKey) {
+    _cachedEmbeddingsInstance = new OpenAIEmbeddings({
+      model: embeddingModel.modelId,
+      apiKey: apiKey || undefined,
       configuration: {
-        baseURL: process.env.EMBEDDING_MODEL_BASE_URL,
+        baseURL: embeddingModel.baseUrl,
       },
     });
+    _cachedEmbeddingsKey = apiKey;
   }
-  return embeddingsInstance;
+  return _cachedEmbeddingsInstance;
 }
 
 // ============================================================================
@@ -88,7 +94,7 @@ export async function getTable() {
       // Table doesn't exist, create it
 
       // Create initial placeholder record to establish schema
-      const embeddings = getEmbeddings();
+      const embeddings = getEmbeddings(null);
       const placeholderVector = await embeddings.embedQuery("__init__");
 
       table = await db.createTable(TABLE_NAME, [
@@ -222,16 +228,17 @@ export function buildWikiApiUrl(article, sectionIndex = null) {
  * @param {string} query - Search query
  * @param {number} k - Number of results to return (default 3)
  * @param {string} filterType - Filter by type (required - e.g., 'wikipediaSearch', 'pageOverview', 'pageSection')
+ * @param {string|null} apiKey - OpenRouter API key for embeddings
  * @returns {Promise<Array>} Array of {id, document, metadata} objects
  */
-export async function searchVectorDB(query, k = 3, filterType) {
+export async function searchVectorDB(query, k = 3, filterType, apiKey = null) {
   if (!filterType) {
     throw new Error("filterType is required for searchVectorDB");
   }
 
   try {
     const tbl = await getTable();
-    const embeddings = getEmbeddings();
+    const embeddings = getEmbeddings(apiKey);
 
     // Embed the query
     const queryEmbedding = await embeddings.embedQuery(query);
@@ -273,10 +280,10 @@ export async function searchVectorDB(query, k = 3, filterType) {
  * @param {string} content - Page/section content (stored as whole, not chunked)
  * @returns {Promise<void>}
  */
-export async function upsertWikiPage(page, section, content, sectionIndex = 0) {
+export async function upsertWikiPage(page, section, content, sectionIndex = 0, apiKey = null) {
   try {
     const tbl = await getTable();
-    const embeddings = getEmbeddings();
+    const embeddings = getEmbeddings(apiKey);
 
     // Build user-facing URL with section title directly (no API call needed)
     const url = buildWikiUrl(page, section);

@@ -1,3 +1,9 @@
+let _apiPort = 3456
+
+export function setApiPort(port) {
+  _apiPort = port
+}
+
 export const PROVIDERS = [
   {
     id: 'evpagent',
@@ -6,7 +12,7 @@ export const PROVIDERS = [
     badge: 'Default',
     badgeVariant: 'default',
     apiKeyUrl: 'https://openrouter.ai/keys',
-    apiBaseUrl: 'http://localhost:3456/v1',
+    get apiBaseUrl() { return `http://localhost:${_apiPort}/v1` },
     modelsEndpoint: '/models',
     chatEndpoint: '/chat/completions',
     testEndpoint: '/health',

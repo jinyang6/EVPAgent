@@ -36,7 +36,20 @@ const isDev = !app.isPackaged
 
 let mainWindow = null
 let agentServer = null
+let agentPort = 3456
 const getMainWindow = () => mainWindow
+
+// Polyfill File for undici (not exposed in Electron's Node.js)
+if (typeof globalThis.File === 'undefined') {
+  globalThis.File = class File {
+    constructor(bits, name, options = {}) {
+      this.name = name || ''
+      this.lastModified = options.lastModified || Date.now()
+      this.size = (bits || []).reduce((s, b) => s + (typeof b === 'string' ? b.length : (b?.byteLength || b?.length || 0)), 0)
+      this.type = options.type || ''
+    }
+  }
+}
 
 // VS Code-inspired performance flags
 app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion')
@@ -53,17 +66,25 @@ registerShellHandlers(ipcMain, getMainWindow, shell, dialog)
 registerUpdaterHandlers(ipcMain)
 
 ipcMain.handle('get-app-data-path', () => app.getPath('userData'))
+ipcMain.handle('get-api-port', () => agentPort)
 
 app.whenReady().then(async () => {
   if (process.platform === 'win32') {
     app.setAppUserModelId('com.evpagent.app')
   }
 
-  // Start EVPAgent API server
+  // Set config resolution paths before loading the API module.
+  // In packaged builds config.example.json is shipped inside app.asar;
+  // the user's config.json lives in the persistent userData folder.
+  process.env.EVPAGENT_EXAMPLE_CONFIG_PATH = path.join(app.getAppPath(), 'config.example.json')
+  process.env.EVPAGENT_USER_CONFIG_PATH    = path.join(app.getPath('userData'), 'config.json')
+
+  // Start EVPAgent API server on a dynamic port
   try {
     const { start } = await import('../src/api/index.mjs')
-    agentServer = await start(3456)
-    console.log('EVPAgent API server started on http://localhost:3456')
+    agentServer = await start(0)
+    agentPort = agentServer.address().port
+    console.log(`EVPAgent API server started on http://localhost:${agentPort}`)
   } catch (err) {
     console.error('Failed to start EVPAgent server:', err)
   }
@@ -113,11 +134,8 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   if (agentServer) {
-    try {
-      const { stop } = require('../src/api/index.mjs')
-      // Dynamic ESM stop — use cached module if available
-      agentServer.close()
-    } catch (_) { /* ignore */ }
+    try { agentServer.close(); } catch (_) { /* ignore */ }
+    agentServer = null
   }
 })
 

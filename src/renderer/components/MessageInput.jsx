@@ -39,7 +39,6 @@ function MessageInput({ onSendMessage, isStreaming = false, onStopGeneration, di
       onSendMessage(message, attachments)
       setMessage('')
       setAttachments([])
-      // Reset textarea height after sending
       if (textareaRef.current) {
         textareaRef.current.style.height = 'auto'
       }
@@ -47,13 +46,8 @@ function MessageInput({ onSendMessage, isStreaming = false, onStopGeneration, di
   }
 
   const handleKeyDown = (e) => {
-    // Enter without shift sends message
+    // Enter (plain / Cmd+Enter / Ctrl+Enter) sends; Shift+Enter for newline
     if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      handleSubmit(e)
-    }
-    // Cmd/Ctrl + Enter also sends
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault()
       handleSubmit(e)
     }
