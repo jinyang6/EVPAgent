@@ -7,10 +7,8 @@ export function setApiPort(port) {
 export const PROVIDERS = [
   {
     id: 'evpagent',
-    name: 'EVPAgent',
-    description: 'Wikipedia research agent with multi-turn conversation and deep research capabilities.',
-    badge: 'Default',
-    badgeVariant: 'default',
+    name: 'OpenRouter',
+    description: 'OpenRouter API key for access to frontier LLM models.',
     apiKeyUrl: 'https://openrouter.ai/keys',
     get apiBaseUrl() { return `http://localhost:${_apiPort}/v1` },
     modelsEndpoint: '/models',

@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -7,66 +8,122 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Key as KeyIcon, ExternalLink as ExternalLinkIcon } from 'lucide-react'
-import { EncryptionBadge } from './settings/EncryptionBadge'
+import { Key as KeyIcon } from 'lucide-react'
+import { ApiKeysTab } from './settings/ApiKeysTab'
 import { useProvider } from '@/contexts/ProviderContext'
+import { useModelFetcher } from '@/hooks/useModelFetcher'
 import { useError } from '@/contexts/ErrorContext'
+import { testApiConnection } from '@/core/chat/ApiTester'
 import { openExternal } from '@/platform/ElectronBridge'
+import { getProviderById } from '@/config/providers'
 
 function SettingsModal({ onClose }) {
-  const { apiKeys, setApiKeys, encryptionStatus } = useProvider()
-  const { showSuccess } = useError()
+  const {
+    apiKeys,
+    setApiKeys,
+    modelsFetchStatus,
+    fetchedModels,
+    encryptionStatus
+  } = useProvider()
+  const { fetchModels } = useModelFetcher()
+  const { showSuccess, showError } = useError()
 
-  const handleSave = () => {
-    showSuccess('Settings Saved', 'Your API key has been saved.')
-    onClose()
+  const [testingConnection, setTestingConnection] = useState({})
+  const [connectionTestResult, setConnectionTestResult] = useState({})
+  const [connectionTestTimestamp, setConnectionTestTimestamp] = useState({})
+
+  const handleSave = async (showNotification = true) => {
+    if (showNotification) {
+      showSuccess(
+        'Settings Saved',
+        'Your configuration has been saved successfully.'
+      )
+    }
+
+    // Fetch models in background
+    try {
+      await fetchModels('evpagent', false)
+    } catch (error) {
+      console.error('Failed to fetch models:', error)
+    }
+  }
+
+  const handleTestConnection = async (providerId) => {
+    const apiKey = apiKeys[providerId]
+    const provider = getProviderById(providerId)
+    const requiresKey = provider?.requiresApiKey !== false
+    if (requiresKey && !apiKey) {
+      showError('Cannot Test Connection', 'Please enter an API key first.')
+      return
+    }
+
+    setTestingConnection({ ...testingConnection, [providerId]: true })
+    setConnectionTestResult({ ...connectionTestResult, [providerId]: null })
+
+    try {
+      const result = await testApiConnection(providerId, apiKey)
+      setConnectionTestResult({ ...connectionTestResult, [providerId]: result })
+      if (result.success) {
+        setConnectionTestTimestamp({ ...connectionTestTimestamp, [providerId]: Date.now() })
+      } else {
+        showError(result.title, result.message, result.details)
+      }
+    } catch (error) {
+      const errorResult = { success: false, message: 'Test failed', details: error.message }
+      setConnectionTestResult({ ...connectionTestResult, [providerId]: errorResult })
+      showError('Test Failed', 'Could not test API connection.', error.message)
+    } finally {
+      setTestingConnection({ ...testingConnection, [providerId]: false })
+    }
+  }
+
+  const handleFetchModels = async (providerId) => {
+    try {
+      await fetchModels(providerId, true)
+    } catch (error) {
+      console.error('Failed to fetch models:', error)
+    }
   }
 
   return (
-    <Dialog open={true} onOpenChange={(open) => { if (!open) onClose() }}>
-      <DialogContent className="max-w-md">
+    <Dialog open={true} onOpenChange={(open) => {
+      if (!open) {
+        handleSave(false)
+        onClose()
+      }
+    }}>
+      <DialogContent className="max-w-2xl" onOpenAutoFocus={(e) => e.preventDefault()}>
         <DialogHeader>
           <div className="flex items-center gap-2">
             <KeyIcon className="h-5 w-5" />
             <DialogTitle>API Configuration</DialogTitle>
           </div>
           <DialogDescription>
-            Enter your OpenRouter API key to enable EVPAgent research capabilities.
+            Configure your API key to start chatting with EVPAgent.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-4">
-          {/* API Key Input */}
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <Label htmlFor="api-key">OpenRouter API Key</Label>
-              <EncryptionBadge encryptionStatus={encryptionStatus} />
-            </div>
-            <Input
-              id="api-key"
-              type="password"
-              placeholder="sk-or-v1-..."
-              value={apiKeys.evpagent || ''}
-              onChange={(e) => setApiKeys({ ...apiKeys, evpagent: e.target.value })}
-              className="font-mono"
-            />
-          </div>
-
-          {/* Get API Key Link */}
-          <div
-            onClick={() => openExternal('https://openrouter.ai/keys')}
-            className="flex items-center gap-2 text-sm text-primary hover:underline cursor-pointer"
-          >
-            <ExternalLinkIcon className="h-4 w-4" />
-            Get your API key from OpenRouter
-          </div>
-        </div>
+        <ApiKeysTab
+          apiKeys={apiKeys}
+          setApiKeys={setApiKeys}
+          encryptionStatus={encryptionStatus}
+          testingConnection={testingConnection}
+          connectionTestResult={connectionTestResult}
+          connectionTestTimestamp={connectionTestTimestamp}
+          onTestConnection={handleTestConnection}
+          fetchedModels={fetchedModels}
+          modelsFetchStatus={modelsFetchStatus}
+          onFetchModels={handleFetchModels}
+          openExternal={openExternal}
+        />
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleSave}>Save</Button>
+          <Button variant="outline" onClick={onClose}>
+            Close
+          </Button>
+          <Button onClick={handleSave}>
+            Save Configuration
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
