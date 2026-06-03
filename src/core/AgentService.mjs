@@ -244,7 +244,7 @@ export const AgentService = {
     let content = '';
 
     try {
-      for await (const chunk of sysAgent.stream(normalized, mode, { signal })) {
+      for await (const chunk of sysAgent.stream(normalized, mode, { signal, apiKey })) {
         const delta = chunk?.choices?.[0]?.delta;
         if (!delta) continue;
 

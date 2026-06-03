@@ -67,8 +67,7 @@ export function ConversationProvider({ children }) {
     setConversations,
     setCurrentConversationId,
     setIsLoading,
-    initializedRef,
-    actions.createNewConversation
+    initializedRef
   )
 
   // Initialization
@@ -111,7 +110,13 @@ export function ConversationProvider({ children }) {
       setCurrentConversationId(newConv.id)
     },
     getCurrentConversation: () => conversations.find(c => c.id === currentConversationId),
-    getConversationById: (id) => conversationsRef.current.find(c => c.id === id)
+    getConversationById: (id) => conversationsRef.current.find(c => c.id === id),
+
+    // Reload from disk (used after bulk clear operations)
+    reloadConversations: () => {
+      initializedRef.current = false // reset guard so load runs again
+      return list.loadConversations()
+    }
   }
 
   return (

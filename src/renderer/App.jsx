@@ -30,6 +30,22 @@ function App() {
   const [currentConversation, setCurrentConversation] = useState('conv-1')
   const [showSettings, setShowSettings] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [dataInfo, setDataInfo] = useState(null)
+
+  const loadDataInfo = async () => {
+    if (!isElectron()) return
+    try {
+      const info = await window.electronAPI.data.getInfo()
+      setDataInfo(info)
+    } catch (err) {
+      console.error('Failed to load data info:', err)
+    }
+  }
+
+  const handleOpenSettings = async () => {
+    await loadDataInfo()
+    setShowSettings(true)
+  }
 
   // Log startup mode
   useEffect(() => {
@@ -87,7 +103,7 @@ function App() {
                 <Sidebar
                   isOpen={sidebarOpen}
                   onSelectConversation={setCurrentConversation}
-                  onOpenSettings={() => setShowSettings(true)}
+                  onOpenSettings={handleOpenSettings}
                   sidebarOpen={sidebarOpen}
                   onToggleSidebar={() => setSidebarOpen(prev => !prev)}
                 />
@@ -100,13 +116,17 @@ function App() {
                   {/* Main Chat Area */}
                   <ChatWindow
                     conversationId={currentConversation}
-                    onOpenSettings={() => setShowSettings(true)}
+                    onOpenSettings={handleOpenSettings}
                   />
                 </div>
 
                 {/* Settings Modal */}
                 {showSettings && (
-                  <SettingsModal onClose={() => setShowSettings(false)} />
+                  <SettingsModal
+                    onClose={() => setShowSettings(false)}
+                    dataInfo={dataInfo}
+                    onRefreshDataInfo={loadDataInfo}
+                  />
                 )}
               </div>
             </div>

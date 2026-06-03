@@ -68,6 +68,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return buildNumber >= 22000
   },
 
+  // Data management
+  data: {
+    getInfo: () => ipcRenderer.invoke('data:get-info'),
+    resetVectorDb: () => ipcRenderer.invoke('data:reset-vector-db'),
+    resetPrompts: () => ipcRenderer.invoke('data:reset-prompts'),
+    clearConversations: () => ipcRenderer.invoke('data:clear-conversations')
+  },
+
   // Auto-updater
   updater: {
     check: () => ipcRenderer.invoke('updater:check'),

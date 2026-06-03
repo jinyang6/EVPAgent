@@ -25,6 +25,7 @@ try {
 }
 
 const path = require('path')
+const fs = require('fs')
 const { createWindow } = require('./window.cjs')
 const { registerFsHandlers } = require('./ipc/fs.cjs')
 const { registerStoreHandlers } = require('./ipc/store.cjs')
@@ -67,6 +68,90 @@ registerUpdaterHandlers(ipcMain)
 
 ipcMain.handle('get-app-data-path', () => app.getPath('userData'))
 ipcMain.handle('get-api-port', () => agentPort)
+
+// ── Data management IPC handlers ──────────────────────────────────
+
+ipcMain.handle('data:get-info', async () => {
+  const userData = app.getPath('userData')
+  const baseName = path.basename(userData)
+
+  function getDirSize(dirPath) {
+    let size = 0
+    if (!fs.existsSync(dirPath)) return size
+    try {
+      const entries = fs.readdirSync(dirPath, { withFileTypes: true })
+      for (const entry of entries) {
+        const fp = path.join(dirPath, entry.name)
+        if (entry.isDirectory()) {
+          size += getDirSize(fp)
+        } else if (entry.isFile()) {
+          try { size += fs.statSync(fp).size } catch (_) { /* skip */ }
+        }
+      }
+    } catch (_) { /* skip */ }
+    return size
+  }
+
+  function countFiles(dirPath) {
+    if (!fs.existsSync(dirPath)) return 0
+    try { return fs.readdirSync(dirPath).filter(f => f.endsWith('.json')).length } catch (_) { return 0 }
+  }
+
+  function countAnyFiles(dirPath) {
+    if (!fs.existsSync(dirPath)) return 0
+    try { return fs.readdirSync(dirPath).length } catch (_) { return 0 }
+  }
+
+  const lancedbPath = path.join(userData, 'lancedb')
+  const promptsPath = path.join(userData, 'prompts', 'dynamic_prompts')
+  const conversationsPath = path.join(userData, 'conversations')
+
+  return {
+    vectorDb: {
+      path: `${baseName}${path.sep}lancedb`,
+      sizeBytes: getDirSize(lancedbPath)
+    },
+    prompts: {
+      path: `${baseName}${path.sep}prompts${path.sep}dynamic_prompts`,
+      customCount: countFiles(path.join(promptsPath, 'Loop')) + countFiles(path.join(promptsPath, 'Rephrase')),
+      defaultCount: 2
+    },
+    conversations: {
+      path: `${baseName}${path.sep}conversations`,
+      fileCount: countAnyFiles(conversationsPath),
+      sizeBytes: getDirSize(conversationsPath)
+    }
+  }
+})
+
+ipcMain.handle('data:reset-vector-db', async () => {
+  const { SysAgent } = await import('../system/agents/SysAgent/index.mjs')
+  const sysAgent = new SysAgent()
+  await sysAgent.resetVectorDB()
+  return { success: true }
+})
+
+ipcMain.handle('data:reset-prompts', async () => {
+  const { SysAgent } = await import('../system/agents/SysAgent/index.mjs')
+  const sysAgent = new SysAgent()
+  sysAgent.resetPrompts()
+  return { success: true }
+})
+
+ipcMain.handle('data:clear-conversations', async () => {
+  const conversationsPath = path.join(app.getPath('userData'), 'conversations')
+  if (fs.existsSync(conversationsPath)) {
+    const files = fs.readdirSync(conversationsPath)
+    for (const file of files) {
+      try {
+        const fp = path.join(conversationsPath, file)
+        const stat = fs.statSync(fp)
+        if (stat.isFile()) fs.unlinkSync(fp)
+      } catch (_) { /* skip locked files */ }
+    }
+  }
+  return { success: true }
+})
 
 app.whenReady().then(async () => {
   if (process.platform === 'win32') {

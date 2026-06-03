@@ -74,9 +74,17 @@ export class SysAgent {
    * @param {'probe'|'rover'} mode - Workflow mode: probe (fast) or rover (in-depth)
    * @param {Object} [opts]
    * @param {AbortSignal} [opts.signal] - Abort signal to cancel execution
+   * @param {string} [opts.apiKey] - API key override (applied per-call; allows reuse of a pre-created instance)
    */
-  async *stream(messages, mode = 'probe', { signal } = {}) {
+  async *stream(messages, mode = 'probe', { signal, apiKey } = {}) {
     if (!this._initialized) await this.init();
+
+    // Apply API key override — allows AgentService to inject the key when
+    // reusing a pre-created agent (e.g. CLI mode where SysAgent is created
+    // before the first HTTP call provides the key).
+    if (apiKey) {
+      this.baseConfig.configurable.apiKey = apiKey;
+    }
 
     // Reset session files for fresh query
     this.#resetSessionFiles();

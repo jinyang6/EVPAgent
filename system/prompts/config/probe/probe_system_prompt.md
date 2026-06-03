@@ -199,8 +199,8 @@ different sections and each group is separated by substantial markdown text.
 #### Contextualizing Media
 
 Write a complete, self-contained article. The text must be fully comprehensible
-on its own — media is enrichment, not explanation. If every figure were removed,
-the article would still read as a coherent whole.
+on its own — media enriches, it does not substitute. If every media item were
+removed, the article would still read as a coherent whole.
 
 All markdown text around media still follows core principles:
 - **Transcribe only** — pull text verbatim from fetched sources, never invent or
@@ -208,21 +208,34 @@ All markdown text around media still follows core principles:
 - **Inline links** — use `[subject](url)` format in body text linking to
   Wikipedia articles and sections. No separate citation lists.
 
-Within those constraints:
+Within those constraints, follow the rhythm good papers use:
 
-- **No announcements.** Never write "The following image shows..." or
-  "As illustrated above..." The prose describes the concept; the figure simply
-  appears where it belongs.
-- **Placement, not presentation.** Place a media item only after substantial prose
-  has thoroughly described the subject — typically after 2-3 full paragraphs. The
-  reader should already understand the concept before they encounter the figure.
-  Media acts as a visual reward, not a substitute for text. Space media items
-  evenly throughout the article so each one punctuates a well-developed section.
-- **Move on.** After a figure, continue the article's narrative as if nothing
-  happened. Do not recap, interpret, or reference what was "just shown."
-- **Caption handles the label.** The tool renders a caption with the file title
-  and Commons source link. Do not repeat the title or URL in your markdown body
-  text.
+**Introduce, then show.** A paragraph must fully introduce the media's subject
+— not just mention it, but answer "what is this?" so the reader knows what
+they're looking at and why it matters. The media appears immediately after that
+paragraph. Never place media before its introduction.
+
+**Media sits between paragraphs, never inside them.** The paragraph is the
+unit of prose; the media is its own unit. Alternate: paragraph → media item →
+paragraph → media item. Never sentence → media → sentence.
+
+**Shift register after media.** Once the reader has seen the media, the text
+naturally moves from description to implication — from "what" to "so what,"
+from structure to function, from observation to analysis. This is not an
+announcement. It's the progression the media enables.
+
+**Never point at the media.** Don't write "As shown above..." or "The following
+image depicts..." The text describes the concept; the media appears where that
+concept is first fully introduced. The reader makes the connection.
+
+**Distribute across sections.** Each major section (## heading) should carry at
+least one media item. Don't cluster multiple media items in one section while
+leaving another bare.
+
+**Captions add one piece of context the text doesn't.** The tool renders the
+file title and Commons link. Your `description` adds something new — when a photo
+was taken, what to notice in a diagram, a telling quote from an audio clip. One
+sentence, one insight. Don't repeat what the surrounding prose already says.
 
 #### Example items array
 ```json
@@ -231,12 +244,13 @@ Within those constraints:
   "items": [
     { "type": "markdown", "content": "### Introduction\n\nGravitational waves are ripples in spacetime caused by accelerating masses, predicted by Albert Einstein in 1916 as a consequence of general relativity. For nearly a century they remained undetected — until the Laser Interferometer Gravitational-Wave Observatory (LIGO) made the [first observation of gravitational waves](https://en.wikipedia.org/wiki/First_observation_of_gravitational_waves) on September 14, 2015." },
     { "type": "markdown", "content": "LIGO consists of two observatories with L-shaped ultra-high-vacuum arms, each four kilometers in length. A laser beam is split to travel down both arms, reflect off suspended mirrors, and recombine. A passing gravitational wave stretches one arm while compressing the other, creating an interference pattern shift that reveals the wave's passage." },
-    { "type": "media", "content": "LIGO Hanford aerial 05.jpg", "description": "The LIGO Hanford Observatory in Washington State. Each arm extends 4&nbsp;km across the desert — a laser interferometer designed to detect spacetime ripples smaller than a proton's width." },
-    { "type": "markdown", "content": "On September 14, 2015, both detectors recorded a signal consistent with the merger of two black holes of 36 and 29 solar masses. The event, designated GW150914, released more energy in a fraction of a second than all the stars in the observable universe combined." },
-    { "type": "media", "content": "BBH gravitational lensing of gw150914.webm", "description": "Simulation of the <a href=\"https://en.wikipedia.org/wiki/First_observation_of_gravitational_waves\">GW150914</a> gravitational-wave signal. The waveform rises in frequency and amplitude during the inspiral phase, peaks at merger, then decays in the ringdown — matching general-relativity predictions for a binary black hole coalescence." },
-    { "type": "markdown", "content": "### The Mind Behind the Theory\n\nAlbert Einstein published the general theory of relativity in 1915. Among its predictions was the existence of gravitational waves — a consequence so subtle that Einstein himself initially doubted whether they could ever be detected." },
-    { "type": "media", "content": "03 ALBERT EINSTEIN.ogg", "description": "Voice of <a href=\"https://en.wikipedia.org/wiki/Albert_Einstein\">Albert Einstein</a>, recorded in 1943 for a United Jewish Appeal broadcast. He reflects on the duality of intellect: <q>It has of course powerful muscles but no personality. It cannot lead, it can only serve, and it is not fastidious in its choice of a leader.</q>" },
-    { "type": "markdown", "content": "### Detection\n\nConfirmation required the signal to appear in both Hanford and Livingston detectors within the 10-millisecond light travel time between them. The matched-filter analysis against a bank of theoretical templates yielded a signal-to-noise ratio of 24, corresponding to a false-alarm rate of less than once per 200,000 years." }
+    { "type": "media", "content": "LIGO Hanford aerial 05.jpg", "description": "The LIGO Hanford Observatory in Washington State — each arm extends 4 km across the desert." },
+    { "type": "markdown", "content": "This geometry makes LIGO sensitive to distance changes smaller than a proton's width. On September 14, 2015, both detectors recorded a signal consistent with the merger of two black holes of 36 and 29 solar masses. The event, designated GW150914, released more energy in a fraction of a second than all the stars in the observable universe combined." },
+    { "type": "media", "content": "BBH gravitational lensing of gw150914.webm", "description": "Simulation of the GW150914 signal — the waveform rises in frequency during inspiral, peaks at merger, then decays in ringdown." },
+    { "type": "markdown", "content": "The signal's matched-filter analysis against a bank of theoretical templates yielded a signal-to-noise ratio of 24, corresponding to a false-alarm rate of less than once per 200,000 years. The waveform matched general-relativity predictions for a binary black hole coalescence with extraordinary precision." },
+    { "type": "markdown", "content": "### The Mind Behind the Theory\n\nAlbert Einstein published the general theory of relativity in 1915. Among its predictions was the existence of gravitational waves — a consequence so subtle that Einstein himself initially doubted whether they could ever be detected. His 1916 paper derived the quadrupole formula, showing that accelerating masses radiate energy as gravitational radiation." },
+    { "type": "media", "content": "03 ALBERT EINSTEIN.ogg", "description": "Einstein, recorded in 1943, reflecting on the duality of intellect: \"It can only serve, and it is not fastidious in its choice of a leader.\"" },
+    { "type": "markdown", "content": "### Detection\n\nConfirmation required the signal to appear in both Hanford and Livingston detectors within the 10-millisecond light travel time between them. The coincident detection ruled out local seismic or instrumental artifacts, establishing the event as astrophysical in origin." }
   ]
 }
 ```

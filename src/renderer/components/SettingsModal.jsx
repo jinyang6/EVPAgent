@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -8,16 +8,19 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { Key as KeyIcon } from 'lucide-react'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { Settings as SettingsIcon } from 'lucide-react'
 import { ApiKeysTab } from './settings/ApiKeysTab'
+import { DataTab } from './settings/DataTab'
 import { useProvider } from '@/contexts/ProviderContext'
+import { useConversation } from '@/contexts/ConversationContext'
 import { useModelFetcher } from '@/hooks/useModelFetcher'
 import { useError } from '@/contexts/ErrorContext'
 import { testApiConnection } from '@/core/chat/ApiTester'
 import { openExternal } from '@/platform/ElectronBridge'
 import { getProviderById } from '@/config/providers'
 
-function SettingsModal({ onClose }) {
+function SettingsModal({ onClose, dataInfo, onRefreshDataInfo }) {
   const {
     apiKeys,
     setApiKeys,
@@ -25,6 +28,7 @@ function SettingsModal({ onClose }) {
     fetchedModels,
     encryptionStatus
   } = useProvider()
+  const { reloadConversations } = useConversation()
   const { fetchModels } = useModelFetcher()
   const { showSuccess, showError } = useError()
 
@@ -85,6 +89,12 @@ function SettingsModal({ onClose }) {
     }
   }
 
+  const handleClearConversations = useCallback(async () => {
+    await window.electronAPI.data.clearConversations()
+    await reloadConversations()
+    await onRefreshDataInfo()
+  }, [reloadConversations, onRefreshDataInfo])
+
   return (
     <Dialog open={true} onOpenChange={(open) => {
       if (!open) {
@@ -95,27 +105,44 @@ function SettingsModal({ onClose }) {
       <DialogContent className="max-w-2xl" onOpenAutoFocus={(e) => e.preventDefault()}>
         <DialogHeader>
           <div className="flex items-center gap-2">
-            <KeyIcon className="h-5 w-5" />
-            <DialogTitle>API Configuration</DialogTitle>
+            <SettingsIcon className="h-5 w-5" />
+            <DialogTitle>Settings</DialogTitle>
           </div>
           <DialogDescription>
-            Configure your API key to start chatting with EVPAgent.
+            Configure your API key and manage application data.
           </DialogDescription>
         </DialogHeader>
 
-        <ApiKeysTab
-          apiKeys={apiKeys}
-          setApiKeys={setApiKeys}
-          encryptionStatus={encryptionStatus}
-          testingConnection={testingConnection}
-          connectionTestResult={connectionTestResult}
-          connectionTestTimestamp={connectionTestTimestamp}
-          onTestConnection={handleTestConnection}
-          fetchedModels={fetchedModels}
-          modelsFetchStatus={modelsFetchStatus}
-          onFetchModels={handleFetchModels}
-          openExternal={openExternal}
-        />
+        <Tabs defaultValue="apikey" className="w-full">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="apikey">API Key</TabsTrigger>
+            <TabsTrigger value="data">Data &amp; Memory</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="apikey">
+            <ApiKeysTab
+              apiKeys={apiKeys}
+              setApiKeys={setApiKeys}
+              encryptionStatus={encryptionStatus}
+              testingConnection={testingConnection}
+              connectionTestResult={connectionTestResult}
+              connectionTestTimestamp={connectionTestTimestamp}
+              onTestConnection={handleTestConnection}
+              fetchedModels={fetchedModels}
+              modelsFetchStatus={modelsFetchStatus}
+              onFetchModels={handleFetchModels}
+              openExternal={openExternal}
+            />
+          </TabsContent>
+
+          <TabsContent value="data">
+            <DataTab
+              dataInfo={dataInfo}
+              onRefresh={onRefreshDataInfo}
+              onClearConversations={handleClearConversations}
+            />
+          </TabsContent>
+        </Tabs>
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>

@@ -58,15 +58,19 @@ let _cachedEmbeddingsKey = undefined; // key used for the cached instance
  */
 export function getEmbeddings(apiKey) {
   const { embeddingModel } = getConfig();
-  if (!_cachedEmbeddingsInstance || _cachedEmbeddingsKey !== apiKey) {
+  // Normalize so null / "" / undefined collapse to one canonical value —
+  // otherwise the cache key (raw apiKey) and the instance (apiKey || undefined)
+  // can disagree, leaving a keyless instance serving later authenticated calls.
+  const normalizedKey = apiKey || undefined;
+  if (!_cachedEmbeddingsInstance || _cachedEmbeddingsKey !== normalizedKey) {
     _cachedEmbeddingsInstance = new OpenAIEmbeddings({
       model: embeddingModel.modelId,
-      apiKey: apiKey || undefined,
+      apiKey: normalizedKey,
       configuration: {
         baseURL: embeddingModel.baseUrl,
       },
     });
-    _cachedEmbeddingsKey = apiKey;
+    _cachedEmbeddingsKey = normalizedKey;
   }
   return _cachedEmbeddingsInstance;
 }
@@ -80,9 +84,10 @@ let table = null;
 
 /**
  * Get or create the LanceDB connection and table
+ * @param {string|null} apiKey - OpenRouter API key, used when creating the table's schema placeholder
  * @returns {Promise<Table>}
  */
-export async function getTable() {
+export async function getTable(apiKey = null) {
   if (!table) {
     const dbPath = getVectorDBPath();
     db = await connect(dbPath);
@@ -94,7 +99,7 @@ export async function getTable() {
       // Table doesn't exist, create it
 
       // Create initial placeholder record to establish schema
-      const embeddings = getEmbeddings(null);
+      const embeddings = getEmbeddings(apiKey);
       const placeholderVector = await embeddings.embedQuery("__init__");
 
       table = await db.createTable(TABLE_NAME, [
@@ -130,6 +135,10 @@ export async function resetVectorDB() {
   }
   db = null;
   table = null;
+  // Drop the cached embeddings instance too — its lazily-created OpenAI client
+  // may hold a stale key/config that should not survive a reset.
+  _cachedEmbeddingsInstance = null;
+  _cachedEmbeddingsKey = undefined;
 }
 
 // ============================================================================
@@ -237,7 +246,7 @@ export async function searchVectorDB(query, k = 3, filterType, apiKey = null) {
   }
 
   try {
-    const tbl = await getTable();
+    const tbl = await getTable(apiKey);
     const embeddings = getEmbeddings(apiKey);
 
     // Embed the query
@@ -282,7 +291,7 @@ export async function searchVectorDB(query, k = 3, filterType, apiKey = null) {
  */
 export async function upsertWikiPage(page, section, content, sectionIndex = 0, apiKey = null) {
   try {
-    const tbl = await getTable();
+    const tbl = await getTable(apiKey);
     const embeddings = getEmbeddings(apiKey);
 
     // Build user-facing URL with section title directly (no API call needed)
