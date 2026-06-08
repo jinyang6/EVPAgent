@@ -98,11 +98,48 @@ Examples:
 ### 4. Fetch (Simple Path)
 Fetch the most relevant sections of the article.
 
-**Seek media files.** Wikipedia articles often embed media files (audio, images,
-video) at the top of the article or within the infobox. After fetching article
-text, check the lead section and infobox for file names — these are typically
-at section index 0. Include any relevant media in your `report` items array
-as `{ type: "media", content: "filename.ext" }`.
+**Actively hunt for media — do not assume there is none.** Wikipedia embeds media
+far beyond the lead and infobox. Treat "no media" as a conclusion you must *earn*
+by looking, never a default. Before reporting, you MUST search for media files:
+
+1. **Fetch section index 0** (lead + infobox) — primary photos, portraits,
+   pronunciation audio, `{{Listen}}` clips, and lead diagrams usually live here.
+
+2. **Scan the section list** for media-bearing sections and fetch them.
+   Likely names: "Gallery", "Media", "External media", "Photographs", "Images",
+   "Illustrations", "Diagrams", "Maps", "Recordings", "Audio", "Discography",
+   "Speeches", "Sound", "Footage", "Video", "Performance", "Works".
+
+3. **Hunt by media type — each needs its own search:**
+   - **Images / photos / diagrams:** articles with a visual subject (places,
+     objects, people, events, structures) almost always have photographs,
+     diagrams, or illustrations. Check the infobox, lead, "Gallery" section,
+     and the sections covering the subject's visual aspects. Look for `.jpg`,
+     `.png`, `.svg`, `.gif`, `.webp` filenames.
+   - **Audio:** people, music, speeches, languages, animals, and acoustic
+     phenomena often have recordings hidden in a dedicated section ("Recordings",
+     "Audio", "Speeches", "Discography") even when the lead has only a photo.
+     Spoken-word samples, song excerpts, and pronunciation files (`.ogg`, `.oga`,
+     `.mp3`, `.wav`, `.flac`) rarely appear in the infobox — fetch the section.
+   - **Video / animation:** events, processes, demonstrations, and historical
+     footage often have `.webm`, `.ogv`, or `.mp4` files. These sit in
+     "Footage", "Media", "External links", or near the relevant section text.
+     Look for `{{External media}}` and `{{Wide image}}` templates.
+
+4. **Inspect the wikitext** for `[[File:...]]`, `{{Listen}}`, `{{Audio}}`,
+   `{{Multiple image}}`, `{{External media}}`, `{{Wide image}}`, and
+   `{{Gallery}}` templates in every section you fetch — these name the exact
+   files to use.
+
+Include each relevant file in your `report` items array as
+`{ type: "media", content: "filename.ext" }`. Only conclude a media type is
+unavailable after you have actually fetched and scanned the candidate sections.
+
+**Media lives across articles, not just one.** If you don't find a media type on
+the main article, search for related articles — linked pages, list pages, gallery
+pages, category pages, discographies, speeches collections, Commons pages — where
+media files are often hosted. `searchWikipedia` indexes all of them. Keep looking
+across articles until you have genuinely exhausted the available sources.
 
 ### 5. deepSearch (Complex Path)
 
@@ -177,12 +214,42 @@ least one media item matching the subject:
 
 | Topic is about... | Must include... |
 |---|---|
-| A person | Photograph or portrait of the person; audio of their voice or speech if available |
+| A person | Photograph or portrait; **and** audio of their voice or speech |
 | An event | Video or photograph of the event |
 | Music / composition | Audio playback of the piece |
 | A physical object, structure, or place | Photograph, diagram, or illustration |
 | A process, motion, or temporal sequence | Animation or video |
 | Sound, speech, or acoustic phenomenon | Audio recording |
+
+**"If available" means you checked, not that you guessed.** Before you conclude
+any media type is unavailable, you must have fetched and scanned the sections where
+it would live (see step 4). Skipping media because you did not look is a failure.
+When multiple media types exist for the same subject (e.g., a photo AND a video
+AND a recording), include all of them — do not settle for one when more are present.
+
+**Multi-pass media discovery.** Finding one image is not "media done." Before
+calling `report`, you MUST run a dedicated discovery pass for each media type
+that matches your subject. Do them in separate search steps:
+
+1. **Pass 1 — Images / photos / diagrams.** Hunt across the main article and
+   any related articles. Fetch a photograph, diagram, map, or illustration.
+   Most subjects have at least one visual media file somewhere in the article
+   network.
+
+2. **Pass 2 — Audio.** Does your subject produce or involve sound? A person
+   speaking, an animal calling, a musical piece, a language sample, a speech,
+   a natural phenomenon? Run a dedicated search for audio files across the main
+   article AND related articles. Audio is the most commonly missed media type
+   because it rarely appears in the lead — it requires a deliberate second pass.
+   Do not skip this pass just because you found images in pass 1.
+
+3. **Pass 3 — Video / animation.** Events, demonstrations, processes, and
+   historical subjects often have footage. Search the main article and related
+   articles for video files.
+
+Only after you have completed all three passes (or confirmed a pass does not
+apply to your subject) may you call `report`. Finding success in pass 1 does not
+excuse you from running passes 2 and 3.
 
 **Quality gate.** Beyond the topic match above, the only restriction is that
 the media must be genuinely useful — not filler:

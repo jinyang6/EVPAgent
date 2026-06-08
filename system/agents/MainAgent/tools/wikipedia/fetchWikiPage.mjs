@@ -9,7 +9,7 @@ import {
   recordWebRequest,
   recordArticle,
 } from "../stats.mjs";
-import { wikiRequest, reportWikiResult, buildWikiUrl, parseWikitext } from "./wikipediaHelpers.mjs";
+import { wikiRequest, reportWikiResult, logNetworkError, buildWikiUrl, parseWikitext } from "./wikipediaHelpers.mjs";
 
 /**
  * Schema for fetchWikiPage tool
@@ -147,6 +147,7 @@ async function fetchWikiPage({ page, sectionIndex, limit = 3, useCache = true },
     return result;
 
   } catch (error) {
+    logNetworkError("fetchWikiPage", "fetchWikiPage", error, `page="${page}" section=${sectionIndex ?? 0}`);
     if (error.response?.status === 404) {
       return `Wikipedia page "${page}" not found.`;
     }

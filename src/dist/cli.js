@@ -510,14 +510,47 @@ import z10 from "zod";
 
 // system/agents/MainAgent/tools/wikipedia/wikipediaHelpers.mjs
 import axios from "axios";
-import { readFileSync as readFileSync10, existsSync as existsSync10, writeFileSync as writeFileSync3 } from "fs";
+import { readFileSync as readFileSync10, existsSync as existsSync10, writeFileSync as writeFileSync3, mkdirSync } from "fs";
 import { join as join11 } from "path";
 var WIKI_BASE_URL = "https://en.wikipedia.org/w/api.php";
 var WIKI_USER_AGENT = "EVPAgent/1.0 (https://github.com/jinyang6/EVPAgent; jiatom519@gmail.com)";
+function describeNetworkError(error) {
+  const code = error?.code;
+  const status = error?.response?.status;
+  if (status) {
+    return `HTTP ${status} ${error.response.statusText || ""}`.trim();
+  }
+  switch (code) {
+    case "ECONNABORTED":
+    case "ETIMEDOUT":
+      return `request timed out after ${error?.config?.timeout ?? "?"}ms (code ${code})`;
+    case "ENOTFOUND":
+    case "EAI_AGAIN":
+      return `DNS resolution failed for host (code ${code}) \u2014 check network/proxy`;
+    case "ECONNREFUSED":
+      return `connection refused (code ${code})`;
+    case "ECONNRESET":
+    case "EPIPE":
+      return `connection reset mid-request (code ${code})`;
+    default:
+      if (typeof code === "string" && /CERT|TLS|SSL|UNABLE_TO/i.test(code)) {
+        return `TLS/certificate failure (code ${code})`;
+      }
+      return code ? `${error.message} (code ${code})` : error?.message || "unknown error";
+  }
+}
+function logNetworkError(file, fn, error, context = "") {
+  const why = describeNetworkError(error);
+  const ctx = context ? ` (${context})` : "";
+  console.error(`[${file}::${fn}]${ctx} ${why}`);
+}
 function reportWikiResult(toolName, args, result) {
   try {
     const promptsDir = getUserPromptsDir();
     const manifestPath = join11(promptsDir, "session_manifest.json");
+    if (!existsSync10(promptsDir)) {
+      mkdirSync(promptsDir, { recursive: true });
+    }
     let manifest = { searchHistory: [], searchSuccess: false };
     if (existsSync10(manifestPath)) {
       try {
@@ -542,12 +575,17 @@ function reportWikiResult(toolName, args, result) {
 }
 async function wikiRequest(action, params) {
   const urlParams = new URLSearchParams({ action, format: "json", ...params });
-  const response = await axios.get(WIKI_BASE_URL, {
-    params: urlParams,
-    headers: { "User-Agent": WIKI_USER_AGENT },
-    timeout: 15e3
-  });
-  return response.data;
+  try {
+    const response = await axios.get(WIKI_BASE_URL, {
+      params: urlParams,
+      headers: { "User-Agent": WIKI_USER_AGENT },
+      timeout: 15e3
+    });
+    return response.data;
+  } catch (error) {
+    logNetworkError("wikipediaHelpers", "wikiRequest", error, `action=${action}`);
+    throw error;
+  }
 }
 function buildWikiUrl(page, section) {
   const base = `https://en.wikipedia.org/wiki/${encodeURIComponent(page.replace(/ /g, "_"))}`;
@@ -582,7 +620,7 @@ async function fetchWikiImageInfo(fileTitle) {
       descriptionurl: info.descriptionurl
     };
   } catch (error) {
-    console.error(`[fetchWikiImageInfo] failed for "${fileTitle}":`, error.message);
+    logNetworkError("wikipediaHelpers", "fetchWikiImageInfo", error, `file="${fileTitle}"`);
     return null;
   }
 }
@@ -596,7 +634,7 @@ import { connect } from "@lancedb/lancedb";
 import { OpenAIEmbeddings } from "@langchain/openai";
 
 // src/config.mjs
-import { readFileSync as readFileSync11, writeFileSync as writeFileSync4, existsSync as existsSync11, mkdirSync } from "fs";
+import { readFileSync as readFileSync11, writeFileSync as writeFileSync4, existsSync as existsSync11, mkdirSync as mkdirSync2 } from "fs";
 import { join as join12, dirname } from "path";
 function resolvePaths() {
   const userPath = process.env.EVPAGENT_USER_CONFIG_PATH;
@@ -617,7 +655,7 @@ function loadConfig() {
   if (!existsSync11(configPath) && existsSync11(examplePath)) {
     console.log(`[config] First run \u2014 copying ${examplePath} \u2192 ${configPath}`);
     const dir = dirname(configPath);
-    if (!existsSync11(dir)) mkdirSync(dir, { recursive: true });
+    if (!existsSync11(dir)) mkdirSync2(dir, { recursive: true });
     const exampleContent = readFileSync11(examplePath, "utf-8");
     writeFileSync4(configPath, exampleContent, "utf-8");
   }
@@ -666,28 +704,29 @@ var _cachedEmbeddingsInstance = null;
 var _cachedEmbeddingsKey = void 0;
 function getEmbeddings(apiKey) {
   const { embeddingModel } = getConfig();
-  if (!_cachedEmbeddingsInstance || _cachedEmbeddingsKey !== apiKey) {
+  const normalizedKey = apiKey || void 0;
+  if (!_cachedEmbeddingsInstance || _cachedEmbeddingsKey !== normalizedKey) {
     _cachedEmbeddingsInstance = new OpenAIEmbeddings({
       model: embeddingModel.modelId,
-      apiKey: apiKey || void 0,
+      apiKey: normalizedKey,
       configuration: {
         baseURL: embeddingModel.baseUrl
       }
     });
-    _cachedEmbeddingsKey = apiKey;
+    _cachedEmbeddingsKey = normalizedKey;
   }
   return _cachedEmbeddingsInstance;
 }
 var db = null;
 var table = null;
-async function getTable() {
+async function getTable(apiKey = null) {
   if (!table) {
     const dbPath = getVectorDBPath();
     db = await connect(dbPath);
     try {
       table = await db.openTable(TABLE_NAME);
     } catch (error) {
-      const embeddings = getEmbeddings(null);
+      const embeddings = getEmbeddings(apiKey);
       const placeholderVector = await embeddings.embedQuery("__init__");
       table = await db.createTable(TABLE_NAME, [
         {
@@ -714,6 +753,8 @@ async function resetVectorDB() {
   }
   db = null;
   table = null;
+  _cachedEmbeddingsInstance = null;
+  _cachedEmbeddingsKey = void 0;
 }
 function generateDocId(type, article, section, url) {
   const raw = `${type}-${article}-${section}-${url}`;
@@ -759,7 +800,7 @@ async function searchVectorDB(query, k = 3, filterType, apiKey = null) {
     throw new Error("filterType is required for searchVectorDB");
   }
   try {
-    const tbl = await getTable();
+    const tbl = await getTable(apiKey);
     const embeddings = getEmbeddings(apiKey);
     const queryEmbedding = await embeddings.embedQuery(query);
     const results = await tbl.search(queryEmbedding).limit(k * 2).toArray();
@@ -784,7 +825,7 @@ async function searchVectorDB(query, k = 3, filterType, apiKey = null) {
 }
 async function upsertWikiPage(page, section, content, sectionIndex = 0, apiKey = null) {
   try {
-    const tbl = await getTable();
+    const tbl = await getTable(apiKey);
     const embeddings = getEmbeddings(apiKey);
     const url = buildWikiUrl2(page, section);
     const lastEdited = await getLastEditedTime(page);
@@ -900,6 +941,7 @@ async function wikipediaSearch({ query, limit = 5 }, config) {
     reportWikiResult("searchWikipedia", { query, limit }, output);
     return output.trim();
   } catch (error) {
+    logNetworkError("searchWikipedia", "wikipediaSearch", error, `query="${query}"`);
     if (error.response?.status === 429) {
       return `Wikipedia search rate limited. Please wait and try again.`;
     }
@@ -1073,6 +1115,7 @@ ${parseWikitext(wikitext)}
     reportWikiResult("fetchWikiPage", { page, sectionIndex: normalizedSectionIndex }, result);
     return result;
   } catch (error) {
+    logNetworkError("fetchWikiPage", "fetchWikiPage", error, `page="${page}" section=${sectionIndex ?? 0}`);
     if (error.response?.status === 404) {
       return `Wikipedia page "${page}" not found.`;
     }
@@ -1204,7 +1247,7 @@ Input: URL to fetch`,
 
 // system/agents/MainAgent/tools/postprocess/reportTool.mjs
 import { tool as tool13 } from "@langchain/core/tools";
-import { readFileSync as readFileSync12, existsSync as existsSync12, writeFileSync as writeFileSync5, mkdirSync as mkdirSync2 } from "fs";
+import { readFileSync as readFileSync12, existsSync as existsSync12, writeFileSync as writeFileSync5, mkdirSync as mkdirSync3 } from "fs";
 import { join as join13 } from "path";
 import z13 from "zod";
 function getOutputFile() {
@@ -1255,7 +1298,7 @@ var reportTool = tool13(
       const outputDir = getOutputDir();
       const outputFile = getOutputFile();
       if (!existsSync12(outputDir)) {
-        mkdirSync2(outputDir, { recursive: true });
+        mkdirSync3(outputDir, { recursive: true });
       }
       const mediaIndices = [];
       items.forEach((item, i) => {
@@ -1496,7 +1539,7 @@ function isNonEmptyString(val) {
 }
 
 // system/agents/SysAgent/index.mjs
-import { existsSync as existsSync15, cpSync, mkdirSync as mkdirSync3, readdirSync as readdirSync3, unlinkSync as unlinkSync2, writeFileSync as writeFileSync6, readFileSync as readFileSync14 } from "fs";
+import { existsSync as existsSync15, cpSync, mkdirSync as mkdirSync4, readdirSync as readdirSync3, unlinkSync as unlinkSync2, writeFileSync as writeFileSync6, readFileSync as readFileSync14 } from "fs";
 import { join as join15 } from "path";
 var SysAgent = class {
   // ─────────────────────────────────────────────────────────────────────────────
@@ -1542,9 +1585,13 @@ var SysAgent = class {
    * @param {'probe'|'rover'} mode - Workflow mode: probe (fast) or rover (in-depth)
    * @param {Object} [opts]
    * @param {AbortSignal} [opts.signal] - Abort signal to cancel execution
+   * @param {string} [opts.apiKey] - API key override (applied per-call; allows reuse of a pre-created instance)
    */
-  async *stream(messages, mode2 = "probe", { signal } = {}) {
+  async *stream(messages, mode2 = "probe", { signal, apiKey } = {}) {
     if (!this._initialized) await this.init();
+    if (apiKey) {
+      this.baseConfig.configurable.apiKey = apiKey;
+    }
     this.#resetSessionFiles();
     const tools4 = mode2 === "probe" ? { searchWikipedia: true, fetchWikiPage: true, fetch_url: true, deepSearch: true } : { searchWikipedia: true, fetchWikiPage: true, fetch_url: true };
     if (mode2 === "probe") {
@@ -1643,11 +1690,11 @@ var SysAgent = class {
     const userDir = getConfigDir();
     const distDir = join15(getScriptDir(), "config");
     if (!existsSync15(userDir)) {
-      mkdirSync3(userDir, { recursive: true });
+      mkdirSync4(userDir, { recursive: true });
     }
     const roverSrc = join15(distDir, "rover");
     const roverDest = join15(userDir, "rover");
-    if (!existsSync15(roverDest)) mkdirSync3(roverDest, { recursive: true });
+    if (!existsSync15(roverDest)) mkdirSync4(roverDest, { recursive: true });
     for (const file of ["rover_system_prompt.md", "Loop.md", "Rephrase.md"]) {
       const src = join15(roverSrc, file);
       const dest = join15(roverDest, file);
@@ -1655,7 +1702,7 @@ var SysAgent = class {
     }
     const probeSrc = join15(distDir, "probe");
     const probeDest = join15(userDir, "probe");
-    if (!existsSync15(probeDest)) mkdirSync3(probeDest, { recursive: true });
+    if (!existsSync15(probeDest)) mkdirSync4(probeDest, { recursive: true });
     for (const file of ["probe_system_prompt.md"]) {
       const src = join15(probeSrc, file);
       const dest = join15(probeDest, file);
@@ -1673,7 +1720,7 @@ var SysAgent = class {
       const userSubDir = join15(userDir, subdir);
       const distSubDir = join15(distDir, subdir);
       if (!existsSync15(userSubDir)) {
-        mkdirSync3(userSubDir, { recursive: true });
+        mkdirSync4(userSubDir, { recursive: true });
       }
       if (existsSync15(distSubDir)) {
         for (const file of readdirSync3(distSubDir)) {
@@ -2018,7 +2065,7 @@ var AgentService = {
     const normalized = normalizeMessages(messages);
     let content = "";
     try {
-      for await (const chunk of sysAgent2.stream(normalized, mode2, { signal })) {
+      for await (const chunk of sysAgent2.stream(normalized, mode2, { signal, apiKey })) {
         const delta = chunk?.choices?.[0]?.delta;
         if (!delta) continue;
         if (delta.tool_calls) {

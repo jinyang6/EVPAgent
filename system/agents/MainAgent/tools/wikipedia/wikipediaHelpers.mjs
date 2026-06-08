@@ -1,5 +1,5 @@
 import axios from "axios";
-import { readFileSync, existsSync, writeFileSync } from "fs";
+import { readFileSync, existsSync, writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
 import { getUserPromptsDir } from "../../../utils/appDataPaths.mjs";
 
@@ -9,6 +9,63 @@ import { getUserPromptsDir } from "../../../utils/appDataPaths.mjs";
 
 export const WIKI_BASE_URL = "https://en.wikipedia.org/w/api.php";
 export const WIKI_USER_AGENT = "EVPAgent/1.0 (https://github.com/jinyang6/EVPAgent; jiatom519@gmail.com)";
+
+// ============================================================================
+// Network diagnostics
+// ============================================================================
+
+/**
+ * Translate an axios/network error into a human-readable cause ("why").
+ * Distinguishes the failure modes that behave differently between the dev
+ * CLI (Node network stack) and the packaged Electron app (proxy/DNS/TLS):
+ *   - ECONNABORTED / ETIMEDOUT  → request exceeded the timeout
+ *   - ENOTFOUND / EAI_AGAIN     → DNS could not resolve the host
+ *   - ECONNREFUSED              → host reachable but refused the connection
+ *   - ECONNRESET / EPIPE        → connection dropped mid-flight
+ *   - CERT_* / UNABLE_TO_*      → TLS/certificate validation failed
+ *   - HTTP status               → server responded with an error code
+ * @param {Error} error - The thrown axios/network error
+ * @returns {string} Single-line cause description
+ */
+export function describeNetworkError(error) {
+  const code = error?.code;
+  const status = error?.response?.status;
+
+  if (status) {
+    return `HTTP ${status} ${error.response.statusText || ""}`.trim();
+  }
+  switch (code) {
+    case "ECONNABORTED":
+    case "ETIMEDOUT":
+      return `request timed out after ${error?.config?.timeout ?? "?"}ms (code ${code})`;
+    case "ENOTFOUND":
+    case "EAI_AGAIN":
+      return `DNS resolution failed for host (code ${code}) — check network/proxy`;
+    case "ECONNREFUSED":
+      return `connection refused (code ${code})`;
+    case "ECONNRESET":
+    case "EPIPE":
+      return `connection reset mid-request (code ${code})`;
+    default:
+      if (typeof code === "string" && /CERT|TLS|SSL|UNABLE_TO/i.test(code)) {
+        return `TLS/certificate failure (code ${code})`;
+      }
+      return code ? `${error.message} (code ${code})` : error?.message || "unknown error";
+  }
+}
+
+/**
+ * Log a network failure in the project's standard `[file::fn] why` format.
+ * @param {string} file - Source file name (e.g. "wikipediaHelpers")
+ * @param {string} fn - Function name where the failure occurred
+ * @param {Error} error - The thrown error
+ * @param {string} [context] - Optional extra context (e.g. the query/page)
+ */
+export function logNetworkError(file, fn, error, context = "") {
+  const why = describeNetworkError(error);
+  const ctx = context ? ` (${context})` : "";
+  console.error(`[${file}::${fn}]${ctx} ${why}`);
+}
 
 // ============================================================================
 // Session manifest reporting
@@ -24,6 +81,13 @@ export function reportWikiResult(toolName, args, result) {
   try {
     const promptsDir = getUserPromptsDir();
     const manifestPath = join(promptsDir, 'session_manifest.json');
+
+    // Ensure the prompts directory exists. In packaged builds a tool can fire
+    // before the prompt-files bootstrap has created this dir, and writeFileSync
+    // would otherwise throw ENOENT and silently drop the manifest update.
+    if (!existsSync(promptsDir)) {
+      mkdirSync(promptsDir, { recursive: true });
+    }
 
     let manifest = { searchHistory: [], searchSuccess: false };
     if (existsSync(manifestPath)) {
@@ -65,12 +129,19 @@ export function reportWikiResult(toolName, args, result) {
 export async function wikiRequest(action, params) {
   const urlParams = new URLSearchParams({ action, format: "json", ...params });
 
-  const response = await axios.get(WIKI_BASE_URL, {
-    params: urlParams,
-    headers: { "User-Agent": WIKI_USER_AGENT },
-    timeout: 15000,
-  });
-  return response.data;
+  try {
+    const response = await axios.get(WIKI_BASE_URL, {
+      params: urlParams,
+      headers: { "User-Agent": WIKI_USER_AGENT },
+      timeout: 15000,
+    });
+    return response.data;
+  } catch (error) {
+    // Log the precise cause (timeout / DNS / TLS / HTTP) before re-throwing so
+    // callers' generic catch blocks still run, but the root cause is recorded.
+    logNetworkError("wikipediaHelpers", "wikiRequest", error, `action=${action}`);
+    throw error;
+  }
 }
 
 /**
@@ -161,7 +232,7 @@ export async function fetchWikiImageInfo(fileTitle) {
       descriptionurl: info.descriptionurl,
     };
   } catch (error) {
-    console.error(`[fetchWikiImageInfo] failed for "${fileTitle}":`, error.message);
+    logNetworkError("wikipediaHelpers", "fetchWikiImageInfo", error, `file="${fileTitle}"`);
     return null;
   }
 }

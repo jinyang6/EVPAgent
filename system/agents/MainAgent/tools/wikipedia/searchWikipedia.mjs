@@ -1,6 +1,6 @@
 import { tool } from "@langchain/core/tools";
 import z from "zod";
-import { wikiRequest, reportWikiResult, WIKI_USER_AGENT } from "./wikipediaHelpers.mjs";
+import { wikiRequest, reportWikiResult, logNetworkError, WIKI_USER_AGENT } from "./wikipediaHelpers.mjs";
 import { searchVectorDB, formatCachedSearchResults } from "../vector/vectorHelpers.mjs";
 
 /**
@@ -62,6 +62,7 @@ async function wikipediaSearch({ query, limit = 5 }, config) {
     return output.trim();
 
   } catch (error) {
+    logNetworkError("searchWikipedia", "wikipediaSearch", error, `query="${query}"`);
     if (error.response?.status === 429) {
       return `Wikipedia search rate limited. Please wait and try again.`;
     }

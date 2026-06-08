@@ -114,7 +114,8 @@ ipcMain.handle('data:get-info', async () => {
     prompts: {
       path: `${baseName}${path.sep}prompts${path.sep}dynamic_prompts`,
       customCount: countFiles(path.join(promptsPath, 'Loop')) + countFiles(path.join(promptsPath, 'Rephrase')),
-      defaultCount: 2
+      defaultCount: 2,
+      sizeBytes: getDirSize(promptsPath)
     },
     conversations: {
       path: `${baseName}${path.sep}conversations`,

@@ -170,7 +170,8 @@ export function DataTab({ dataInfo, onRefresh, onClearConversations }) {
             description="Custom research strategy prompts."
             metrics={[
               { value: dataInfo?.prompts?.customCount ?? 0, label: 'Custom prompts' },
-              { value: dataInfo?.prompts?.defaultCount ?? 2, label: 'Default prompts' }
+              { value: dataInfo?.prompts?.defaultCount ?? 2, label: 'Default prompts' },
+              { value: formatBytes(dataInfo?.prompts?.sizeBytes ?? 0), label: 'Disk usage' }
             ]}
             path={dataInfo?.prompts?.path ?? 'EVPAgent\\prompts\\dynamic_prompts'}
             actionLabel="Reset Prompts to Defaults"
