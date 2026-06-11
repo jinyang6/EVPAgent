@@ -1,6 +1,8 @@
 # EVPAgent
 
-A desktop AI research agent that produces verified, source-grounded articles with embedded media — powered by Wikipedia and your own API key.
+EVPAgent produces verified, source-grounded articles with embedded media — powered by Wikipedia and your own API key.
+
+
 
 <p align="center">
   <img src="assets/screenshots/hero.png" alt="EVPAgent" style="border-radius: 8px;" />
@@ -8,13 +10,11 @@ A desktop AI research agent that produces verified, source-grounded articles wit
 
 ## Features
 
-- **Verified Answers** — Every claim linked to a Wikipedia source. Never hallucinates facts, dates, or names.
-- **Two Research Modes** — Probe for fast, conversational lookups. Rover for in-depth, multi-hour investigations with sub-agent delegation.
-- **Rich Multimedia Output** — Automatically discovers and embeds images, audio, and video from Wikipedia Commons into every article.
-- **Ask Once, Get a Report** — Output is a structured article with ordered sections, inline citations, and media figures — not a chat log.
-- **Self-Improving** — Learns from each session to optimize future searches. Prompt strategy gets better with use.
-- **OpenAI-Compatible API** — Built-in API server. Point any OpenAI-compatible client (including ChatAnyLLM) at `localhost:<port>/v1`.
-- **Local & Private** — All research stays on your machine. Your OpenRouter API key, nothing else needed.
+- **Adaptive question formulation** — Rephrases queries for academic precision, searches Wikipedia, and for complex questions, adaptively formulates sub-questions one at a time — each shaped by the prior answer — until the evidence converges.
+- **Verifiable attribution** — Every claim carries an inline markdown URL link to its Wikipedia source. No hallucination.
+- **Multimedia augmentation** — Discovers and embeds images, audio, and video from Wikimedia Commons into the article output.
+- **Long-form synthesis** — Delivers a sectioned article with media figures, not a chat log.
+- **Local execution** — Runs on your machine. OpenRouter API key is all you need.
 
 ## Installation
 
@@ -32,7 +32,7 @@ Download the latest installer from [Releases](../../releases):
 1. **Add API Key** — Settings → API Key → Enter your OpenRouter API key
 2. **New Conversation** — Click + button in sidebar
 3. **Ask a Question** — Type any research topic and press Enter
-4. **Get Your Report** — EVPAgent searches Wikipedia, cross-references articles, discovers media, and delivers a formatted, citation-backed article
+4. **Get Results** — EVPAgent searches Wikipedia, cross-references articles, discovers media, and delivers a formatted article with markdown URL text
 
 ## Keyboard Shortcuts
 
