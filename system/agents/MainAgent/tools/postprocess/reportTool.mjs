@@ -77,16 +77,15 @@ function renderMedia({ title, url, descriptionurl }, description) {
     mediaTag = `<a href="${url}" target="_blank" rel="noopener">Download ${caption}</a>`;
   }
 
-  const sep =
-    '<span style="display:inline-block;width:1px;height:0.85em;background:#bbb;vertical-align:middle;margin:0 0.25em"></span>';
   const credit =
-    `<small><a href="${descriptionurl}" target="_blank" rel="noopener">Wikimedia</a></small>`;
+    `<small>Source: <a href="${descriptionurl}" target="_blank" rel="noopener">Wikimedia</a></small>`;
 
   return [
     '<figure style="max-width:70%;margin:1.5em auto;text-align:center;overflow:hidden">',
     `  ${mediaTag}`,
-    `  <figcaption style="margin-top:0.5em;font-size:0.9em;color:#555;text-align:justify;word-break:break-word;overflow-wrap:break-word">`,
-    `    ${caption}${sep}${credit}`,
+    `  <figcaption style="margin-top:0.5em;font-size:0.9em;color:#555;text-align:left;word-break:break-word;overflow-wrap:break-word">`,
+    `    ${caption}`,
+    `    <br>${credit}`,
     `  </figcaption>`,
     "</figure>",
   ].join("\n");
