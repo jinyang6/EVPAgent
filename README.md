@@ -1,6 +1,6 @@
 # EVPAgent
 
-EVPAgent produces verified, source-grounded articles with embedded media, powered by Wikipedia and your own API key.
+Give the agent a question. The LLM investigates, you read the result. It searches Wikipedia, follows evidence chains across articles, and forms each new question from the last answer, iterating until scattered sources converge into one coherent article.
 
 **[Download](https://github.com/jinyang6/EVPAgent/releases/latest)**
 
