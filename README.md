@@ -1,8 +1,8 @@
 # EVPAgent
 
-EVPAgent produces verified, source-grounded articles with embedded media — powered by Wikipedia and your own API key.
+EVPAgent produces verified, source-grounded articles with embedded media, powered by Wikipedia and your own API key.
 
-
+**[Download](https://github.com/jinyang6/EVPAgent/releases/latest)**
 
 <p align="center">
   <img src="assets/screenshots/hero.png" alt="EVPAgent" style="border-radius: 8px;" />
