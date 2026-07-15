@@ -2,7 +2,7 @@
 
 Give the agent a question. The LLM investigates, you read the result. It searches Wikipedia, follows evidence chains across articles, and forms each new question from the last answer, iterating until scattered sources converge into one coherent article.
 
-**[Download](https://github.com/jinyang6/EVPAgent/releases/latest)**
+**[Download](https://github.com/jinyang6/EVPAgent/releases/latest) | [Article](https://medium.com/@1804926965/llm-research-agent-finding-implicit-cross-references-relate-text-and-media-across-disparate-a08c0fbb0886)**
 
 <p align="center">
   <img src="assets/screenshots/hero.png" alt="EVPAgent" style="border-radius: 8px;" />
